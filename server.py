@@ -61,7 +61,6 @@ def chat():
             'qwen/qwen3-235b-a22b:free',
             'google/gemma-3-27b-it:free',
             'x-ai/grok-4-fast:free',
-            'nvidia/nemotron-nano-9b-v2:free',
         ])
         if selected_model not in allowed_models:
             return jsonify({'error': 'Unsupported model selected', 'allowed': sorted(list(allowed_models))}), 400
@@ -160,7 +159,7 @@ ADDITIONAL RULE: Never include your internal thoughts, reasoning, or <think>...<
 User question: {user_message}"""
 
         # Determine API provider and prepare request
-        if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free', 'x-ai/grok-4-fast:free', 'nvidia/nemotron-nano-9b-v2:free']:
+        if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free', 'x-ai/grok-4-fast:free']:
             # OpenRouter API
             payload = {
                 "model": selected_model,
