@@ -473,7 +473,7 @@ class Chatbot {
                         typeNextBlock();
                     }, 100);
                 }
-            }, 3.5);
+            }, 3);
         };
         
         // Start typing the first block
@@ -518,7 +518,7 @@ class Chatbot {
                 this.hideTypingIndicator();
                 this.messages.push({ role: 'assistant', content });
             }
-        }, 3.5);
+        }, 3);
     }
     
     getTypingDelay(char) {
