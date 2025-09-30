@@ -3,10 +3,16 @@ class Chatbot {
         this.messages = [];
         this.isLoading = false;
         this.currentTypingInterval = null;
+        this.sessionId = this.generateSessionId();
+        this.conversationStats = null;
         this.initializeElements();
         this.setupEventListeners();
         this.autoResizeTextarea();
         this.checkServerStatus();
+        this.setupSessionControls();
+        
+        // Load initial conversation stats
+        this.loadInitialStats();
         
         // Set initial status color after a short delay to ensure elements are loaded
         setTimeout(() => {
@@ -14,6 +20,131 @@ class Chatbot {
                 this.updateStatus('Ready', '#4ade80');
             }
         }, 100);
+    }
+
+    generateSessionId() {
+        // Check for existing session in localStorage first
+        const existingSessionId = localStorage.getItem('chatbot_session_id');
+        
+        if (existingSessionId) {
+            console.log('Resuming existing session:', existingSessionId);
+            return existingSessionId;
+        }
+        
+        // Generate a unique session ID for conversation persistence
+        const newSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        // Store the new session ID in localStorage
+        localStorage.setItem('chatbot_session_id', newSessionId);
+        console.log('Created new session:', newSessionId);
+        
+        return newSessionId;
+    }
+    
+    createNewSession() {
+        // Force create a new session and store it
+        const newSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('chatbot_session_id', newSessionId);
+        this.sessionId = newSessionId;
+        
+        console.log('Forced new session creation:', newSessionId);
+        
+        // Clear conversation and reset stats
+        this.clearConversation();
+        
+        return newSessionId;
+    }
+
+    async getConversationStats() {
+        try {
+            const servers = window.location.hostname === 'antonjijo.github.io' 
+                ? ['https://nvidia-nim-bot.onrender.com', 'https://Nvidia.pythonanywhere.com']
+                : ['http://localhost:5000'];
+
+            for (const serverURL of servers) {
+                try {
+                    const response = await fetch(`${serverURL}/api/conversation/stats?session_id=${this.sessionId}`);
+                    if (response.ok) {
+                        this.conversationStats = await response.json();
+                        return this.conversationStats;
+                    }
+                } catch (error) {
+                    console.warn(`Failed to get stats from ${serverURL}:`, error);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to get conversation stats:', error);
+        }
+        return null;
+    }
+
+    async clearConversation() {
+        try {
+            const servers = window.location.hostname === 'antonjijo.github.io' 
+                ? ['https://nvidia-nim-bot.onrender.com', 'https://Nvidia.pythonanywhere.com']
+                : ['http://localhost:5000'];
+
+            for (const serverURL of servers) {
+                try {
+                    const response = await fetch(`${serverURL}/api/conversation/clear`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: this.sessionId,
+                            keep_system_prompt: true
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        // Clear the UI messages as well
+                        this.messages = [];
+                        this.chatMessages.innerHTML = '';
+                        
+                        // Add welcome message back
+                        this.addWelcomeMessage();
+                        
+                        // Update conversation stats
+                        const result = await response.json();
+                        this.conversationStats = result.stats;
+                        this.updateConversationStatsUI();
+                        
+                        console.log('Conversation cleared successfully');
+                        return true;
+                    }
+                } catch (error) {
+                    console.warn(`Failed to clear conversation on ${serverURL}:`, error);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to clear conversation:', error);
+        }
+        return false;
+    }
+
+    addWelcomeMessage() {
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'message bot-message';
+        welcomeDiv.innerHTML = `
+            <div class="message-avatar">
+                <img src="Main_Logo.svg" alt="NVIDIA" class="nvidia-logo" />
+            </div>
+            <div class="message-content">
+                <p>Hello! I'm your NVIDIA-powered chatbot with advanced capabilities:</p>
+                <p><strong>Multiple AI Models available:</strong></p>
+                <p><strong>Meta:</strong> Llama 4 Maverick 17B</p>
+                <p><strong>DeepSeek:</strong> R1</p>
+                <p><strong>Qwen:</strong> Qwen2.5 Coder 32B</p>
+                <p><strong>Qwen:</strong> Qwen3 Coder 480B</p>
+                <p><strong>DeepSeek:</strong> V3.1</p>
+                <p><strong>OpenAI:</strong> GPT-OSS 120B</p>
+                <p><strong>Qwen:</strong> Qwen3 235B A22B</p>
+                <p><strong>Google:</strong> Gemma 3 27B IT</p>
+                <p><strong>X.AI:</strong> Grok 4 Fast</p>
+                <p><strong>Select</strong> your preferred model above and start chatting!</p>
+            </div>
+        `;
+        this.chatMessages.appendChild(welcomeDiv);
+        this.attachCopyListeners(welcomeDiv.querySelector('.message-content'));
     }
 
     initializeElements() {
@@ -75,10 +206,351 @@ class Chatbot {
 
         // Simple model dropdown change handler
         this.modelSelect.addEventListener('change', (e) => {
-            // Model selection is handled automatically by the select element
-            console.log('Model changed to:', e.target.value);
+            this.handleModelChange(e.target.value);
         });
     }
+    
+    async handleModelChange(newModel) {
+        // If this is the first model selection or no conversation exists, just switch
+        if (!this.conversationStats || this.conversationStats.total_messages <= 1) {
+            this.switchModel(newModel);
+            return;
+        }
+        
+        // Show confirmation dialog for model change
+        this.showModelChangeConfirmation(newModel);
+    }
+    
+    showModelChangeConfirmation(newModel) {
+        const stats = this.conversationStats;
+        const currentModel = stats.current_model || 'Unknown';
+        
+        // Create modal overlay
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'modal-overlay';
+        modalOverlay.innerHTML = `
+            <div class="confirmation-modal">
+                <div class="modal-header">
+                    <h3>Change Model & Start New Session?</h3>
+                    <button class="modal-close" aria-label="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-content">
+                    <div class="model-change-info">
+                        <div class="current-session-stats">
+                            <h4>Current Session</h4>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label">Model:</span>
+                                    <span class="stat-value">${this.getModelDisplayName(currentModel)}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Messages:</span>
+                                    <span class="stat-value">${stats.total_messages}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Tokens:</span>
+                                    <span class="stat-value">${stats.total_tokens.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Utilization:</span>
+                                    <span class="stat-value">${stats.utilization_percent}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="arrow-divider">
+                            <i class="fas fa-arrow-down"></i>
+                        </div>
+                        <div class="new-session-info">
+                            <h4>New Session</h4>
+                            <div class="new-model-display">
+                                <span class="new-model-name">${this.getModelDisplayName(newModel)}</span>
+                                <span class="fresh-start">Fresh conversation start</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="warning-notice">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Changing models will start a new session. Your current conversation will be cleared.</span>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="cancel-btn" data-action="cancel">
+                        <i class="fas fa-times"></i>
+                        Keep Current Session
+                    </button>
+                    <button class="confirm-btn" data-action="confirm">
+                        <i class="fas fa-check"></i>
+                        Change Model & Start New
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modalOverlay);
+        
+        // Add event listeners
+        const handleAction = (action) => {
+            if (action === 'confirm') {
+                this.switchModel(newModel);
+                this.createNewSession();
+            } else {
+                // Reset the dropdown to the current model
+                this.modelSelect.value = currentModel;
+                this.updateCustomDropdownDisplay(currentModel);
+            }
+            document.body.removeChild(modalOverlay);
+        };
+        
+        modalOverlay.querySelector('.cancel-btn').addEventListener('click', () => handleAction('cancel'));
+        modalOverlay.querySelector('.confirm-btn').addEventListener('click', () => handleAction('confirm'));
+        modalOverlay.querySelector('.modal-close').addEventListener('click', () => handleAction('cancel'));
+        
+        // Close on overlay click
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) {
+                handleAction('cancel');
+            }
+        });
+        
+        // Close on Escape key
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                handleAction('cancel');
+                document.removeEventListener('keydown', handleKeyDown);
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+    }
+    
+    switchModel(newModel) {
+        console.log('Model changed to:', newModel);
+        // Update the model select value
+        this.modelSelect.value = newModel;
+        this.updateCustomDropdownDisplay(newModel);
+        
+        // Hide loader until actual conversation starts
+        const statsElement = document.getElementById('conversationStats');
+        if (statsElement) {
+            statsElement.style.display = 'none';
+        }
+        
+        // Reset conversation stats - loader will only show after real usage
+        this.conversationStats = null;
+    }
+    
+    getModelDisplayName(modelValue) {
+        const modelNames = {
+            'meta/llama-4-maverick-17b-128e-instruct': 'Llama 4 Maverick 17B',
+            'deepseek-ai/deepseek-r1': 'DeepSeek R1',
+            'qwen/qwen2.5-coder-32b-instruct': 'Qwen2.5 Coder 32B',
+            'qwen/qwen3-coder-480b-a35b-instruct': 'Qwen3 Coder 480B',
+            'deepseek-ai/deepseek-v3.1': 'DeepSeek V3.1',
+            'openai/gpt-oss-120b': 'GPT-OSS 120B',
+            'qwen/qwen3-235b-a22b:free': 'Qwen3 235B A22B',
+            'google/gemma-3-27b-it:free': 'Gemma 3 27B IT',
+            'x-ai/grok-4-fast:free': 'Grok 4 Fast'
+        };
+        return modelNames[modelValue] || modelValue;
+    }
+    
+    updateCustomDropdownDisplay(modelValue) {
+        const displayName = this.getModelDisplayName(modelValue);
+        if (this.selectedOption) {
+            this.selectedOption.textContent = displayName;
+        }
+        
+        // Update selected state in dropdown options
+        const options = document.querySelectorAll('.select-option');
+        options.forEach(option => {
+            option.classList.remove('selected');
+            if (option.dataset.value === modelValue) {
+                option.classList.add('selected');
+            }
+        });
+    }    
+    
+    setupSessionControls() {
+        // Add session management controls to the UI
+        const navbar = document.querySelector('.navbar-right');
+        if (navbar) {
+            // Create session controls container
+            const sessionControls = document.createElement('div');
+            sessionControls.className = 'navbar-item session-controls';
+            sessionControls.innerHTML = `
+                <button id="newSessionBtn" class="session-btn" title="Start New Session">
+                    <i class="fas fa-plus"></i>
+                </button>
+            `;
+            
+            // Insert before the status indicator
+            const statusContainer = navbar.querySelector('.status-container');
+            if (statusContainer) {
+                navbar.insertBefore(sessionControls, statusContainer);
+            }
+            
+            // Add event listeners
+            document.getElementById('newSessionBtn')?.addEventListener('click', () => {
+                this.showNewSessionDialog();
+            });
+        }
+    }
+    
+    async loadInitialStats() {
+        // Load conversation stats on page load
+        const stats = await this.getConversationStats();
+        if (stats) {
+            this.updateConversationStatsUI();
+        }
+    }
+    
+    showNewSessionDialog() {
+        const currentStats = this.conversationStats;
+        const currentModel = this.modelSelect.value;
+        
+        // Create modal overlay
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'modal-overlay';
+        modalOverlay.innerHTML = `
+            <div class="confirmation-modal">
+                <div class="modal-header">
+                    <h3>Start New Conversation Session</h3>
+                    <button class="modal-close" aria-label="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-content">
+                    <div class="new-session-config">
+                        <div class="model-selection-section">
+                            <h4>Select AI Model</h4>
+                            <div class="model-grid">
+                                <div class="model-option" data-model="meta/llama-4-maverick-17b-128e-instruct">
+                                    <div class="model-name">Llama 4 Maverick 17B</div>
+                                    <div class="model-description">Latest Meta model with enhanced reasoning</div>
+                                </div>
+                                <div class="model-option" data-model="deepseek-ai/deepseek-r1">
+                                    <div class="model-name">DeepSeek R1</div>
+                                    <div class="model-description">Advanced reasoning and problem-solving</div>
+                                </div>
+                                <div class="model-option" data-model="qwen/qwen2.5-coder-32b-instruct">
+                                    <div class="model-name">Qwen2.5 Coder 32B</div>
+                                    <div class="model-description">Specialized for coding tasks</div>
+                                </div>
+                                <div class="model-option" data-model="qwen/qwen3-coder-480b-a35b-instruct">
+                                    <div class="model-name">Qwen3 Coder 480B</div>
+                                    <div class="model-description">Advanced coding and development</div>
+                                </div>
+                                <div class="model-option" data-model="deepseek-ai/deepseek-v3.1">
+                                    <div class="model-name">DeepSeek V3.1</div>
+                                    <div class="model-description">General purpose AI assistant</div>
+                                </div>
+                                <div class="model-option" data-model="openai/gpt-oss-120b">
+                                    <div class="model-name">GPT-OSS 120B</div>
+                                    <div class="model-description">Open source GPT variant</div>
+                                </div>
+                                <div class="model-option" data-model="qwen/qwen3-235b-a22b:free">
+                                    <div class="model-name">Qwen3 235B A22B</div>
+                                    <div class="model-description">Free tier Qwen model</div>
+                                </div>
+                                <div class="model-option" data-model="google/gemma-3-27b-it:free">
+                                    <div class="model-name">Gemma 3 27B IT</div>
+                                    <div class="model-description">Google's instruction-tuned model</div>
+                                </div>
+                                <div class="model-option" data-model="x-ai/grok-4-fast:free">
+                                    <div class="model-name">Grok 4 Fast</div>
+                                    <div class="model-description">X.AI's fast response model</div>
+                                </div>
+                            </div>
+                        </div>
+                        ${currentStats && currentStats.total_tokens > 0 && currentStats.current_model ? `
+                        <div class="current-session-info">
+                            <h4>Current Session</h4>
+                            <div class="session-summary">
+                                <div class="summary-item">
+                                    <span class="summary-label">Model:</span>
+                                    <span class="summary-value">${this.getModelDisplayName(currentStats.current_model || currentModel)}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Tokens Used:</span>
+                                    <span class="summary-value">${currentStats.total_tokens.toLocaleString()}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Utilization:</span>
+                                    <span class="summary-value">${currentStats.utilization_percent}%</span>
+                                </div>
+                            </div>
+                            <div class="warning-notice">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>Starting a new session will clear your current conversation.</span>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="cancel-btn" data-action="cancel">
+                        <i class="fas fa-times"></i>
+                        Cancel
+                    </button>
+                    <button class="confirm-btn" data-action="confirm">
+                        <i class="fas fa-plus"></i>
+                        Start New Session
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modalOverlay);
+        
+        // Mark current model as selected
+        const modelOptions = modalOverlay.querySelectorAll('.model-option');
+        modelOptions.forEach(option => {
+            if (option.dataset.model === currentModel) {
+                option.classList.add('selected');
+            }
+            
+            // Add click handler for model selection
+            option.addEventListener('click', () => {
+                modelOptions.forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+            });
+        });
+        
+        // Add event listeners
+        const handleAction = (action) => {
+            if (action === 'confirm') {
+                const selectedModelOption = modalOverlay.querySelector('.model-option.selected');
+                const selectedModel = selectedModelOption ? selectedModelOption.dataset.model : currentModel;
+                
+                // Switch to selected model and create new session
+                this.switchModel(selectedModel);
+                this.createNewSession();
+            }
+            document.body.removeChild(modalOverlay);
+        };
+        
+        modalOverlay.querySelector('.cancel-btn').addEventListener('click', () => handleAction('cancel'));
+        modalOverlay.querySelector('.confirm-btn').addEventListener('click', () => handleAction('confirm'));
+        modalOverlay.querySelector('.modal-close').addEventListener('click', () => handleAction('cancel'));
+        
+        // Close on overlay click
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) {
+                handleAction('cancel');
+            }
+        });
+        
+        // Close on Escape key
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                handleAction('cancel');
+                document.removeEventListener('keydown', handleKeyDown);
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+    }
+
 
     autoResizeTextarea() {
         this.messageInput.style.height = 'auto';
@@ -179,6 +651,7 @@ class Chatbot {
                     body: JSON.stringify({
                         message,
                         model: selectedModel,
+                        session_id: this.sessionId,
                         max_tokens: 1024,
                         temperature: 0.7,
                         top_p: 0.9,
@@ -201,6 +674,12 @@ class Chatbot {
                 const botResponse = data.response || data.message;
                 if (botResponse.includes("Hello! I'm your NVIDIA-powered chatbot with advanced capabilities")) {
                     throw new Error('NVIDIA API returned unexpected response. Please check API configuration.');
+                }
+
+                // Update conversation stats if available
+                if (data.conversation_stats) {
+                    this.conversationStats = data.conversation_stats;
+                    this.updateConversationStatsUI();
                 }
 
                 // Success! Update status and return response
@@ -1829,6 +2308,104 @@ class Chatbot {
         if (typingIndicator) typingIndicator.remove();
     }
 
+    updateConversationStatsUI() {
+        if (!this.conversationStats) {
+            // Hide stats display if no real conversation stats exist
+            const statsElement = document.getElementById('conversationStats');
+            if (statsElement) {
+                statsElement.style.display = 'none';
+            }
+            return;
+        }
+        
+        const { total_tokens, max_tokens, utilization_percent, current_model } = this.conversationStats;
+        
+        // Only show loader if there are actual tokens being used
+        if (total_tokens === 0 || !current_model) {
+            const statsElement = document.getElementById('conversationStats');
+            if (statsElement) {
+                statsElement.style.display = 'none';
+            }
+            return;
+        }
+        
+        // Create or update stats display
+        let statsElement = document.getElementById('conversationStats');
+        if (!statsElement) {
+            statsElement = document.createElement('div');
+            statsElement.id = 'conversationStats';
+            statsElement.className = 'conversation-stats';
+            
+            // Insert after the model info in the footer
+            const modelInfo = document.getElementById('modelInfo');
+            if (modelInfo) {
+                modelInfo.parentNode.insertBefore(statsElement, modelInfo.nextSibling);
+            }
+        }
+        
+        // Show the stats element
+        statsElement.style.display = 'block';
+        
+        // Determine colors based on utilization
+        const utilizationColor = utilization_percent > 80 ? '#ef4444' : 
+                                utilization_percent > 60 ? '#f59e0b' : '#4ade80';
+        
+        const tokenDisplay = total_tokens > 999 ? 
+            `${(total_tokens / 1000).toFixed(1)}K` : 
+            total_tokens.toLocaleString();
+            
+        const maxTokenDisplay = max_tokens > 999 ? 
+            `${(max_tokens / 1000).toFixed(0)}K` : 
+            max_tokens.toLocaleString();
+        
+        // Create small loader with percentage on the right
+        statsElement.innerHTML = `
+            <div class="context-loader-container">
+                <div class="small-loader" data-tooltip="Tokens: ${tokenDisplay}/${maxTokenDisplay} | Model: ${this.getModelDisplayName(current_model)}">
+                    <svg class="loader-circle" viewBox="0 0 20 20">
+                        <circle class="loader-bg" cx="10" cy="10" r="8" fill="none" stroke="rgba(76, 175, 80, 0.2)" stroke-width="2"/>
+                        <circle class="loader-progress" 
+                                cx="10" cy="10" r="8" 
+                                fill="none" 
+                                stroke="${utilizationColor}" 
+                                stroke-width="2" 
+                                stroke-linecap="round"
+                                style="stroke-dasharray: ${2 * Math.PI * 8}; stroke-dashoffset: ${2 * Math.PI * 8 * (1 - utilization_percent / 100)}; transform: rotate(-90deg); transform-origin: center;"/>
+                    </svg>
+                </div>
+                <span class="loader-percentage" style="color: ${utilizationColor};">${utilization_percent}%</span>
+            </div>
+        `;
+        
+        // Apply enhanced styling for the loader
+        statsElement.style.cssText = `
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: #9ca3af;
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(76, 175, 80, 0.05);
+            border: 1px solid rgba(76, 175, 80, 0.2);
+            border-radius: 8px;
+            padding: 8px 12px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+            position: relative;
+            display: block;
+        `;
+        
+        // Add hover effect for glassmorphism enhancement
+        statsElement.addEventListener('mouseenter', () => {
+            statsElement.style.borderColor = 'rgba(76, 175, 80, 0.4)';
+            statsElement.style.background = 'rgba(76, 175, 80, 0.08)';
+        });
+        
+        statsElement.addEventListener('mouseleave', () => {
+            statsElement.style.borderColor = 'rgba(76, 175, 80, 0.2)';
+            statsElement.style.background = 'rgba(76, 175, 80, 0.05)';
+        });
+    }
+
     updateStatus(text, color) {
         // map color codes to tailwind classes
         const isGreen = color === '#4ade80'; // emerald-400/500
@@ -2069,28 +2646,14 @@ class Chatbot {
     }
     
     selectOption(optionElement) {
-        // Remove selected class from all options
-        const allOptions = this.customSelectDropdown.querySelectorAll('.select-option');
-        allOptions.forEach(opt => opt.classList.remove('selected'));
-        
-        // Add selected class to clicked option
-        optionElement.classList.add('selected');
-        
-        // Update the trigger text
-        this.selectedOption.textContent = optionElement.textContent;
-        
-        // Update the hidden select element
+        // Get the value before making changes
         const value = optionElement.getAttribute('data-value');
-        this.modelSelect.value = value;
         
-        // Trigger change event for compatibility
-        const changeEvent = new Event('change', { bubbles: true });
-        this.modelSelect.dispatchEvent(changeEvent);
-        
-        // Close the dropdown
+        // Close the dropdown first
         this.closeDropdown();
         
-        console.log('Model changed to:', value);
+        // Handle model change with confirmation
+        this.handleModelChange(value);
     }
     
     setupGlobalScrolling() {

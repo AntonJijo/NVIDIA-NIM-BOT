@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import json
+from conversation_memory import get_memory_manager, cleanup_old_sessions
 
 app = Flask(__name__)
 
@@ -29,6 +30,19 @@ NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 
+# Define allowed models set
+ALLOWED_MODELS = {
+    'meta/llama-4-maverick-17b-128e-instruct',
+    'deepseek-ai/deepseek-r1',
+    'qwen/qwen2.5-coder-32b-instruct',
+    'qwen/qwen3-coder-480b-a35b-instruct',
+    'deepseek-ai/deepseek-v3.1',
+    'openai/gpt-oss-120b',
+    'qwen/qwen3-235b-a22b:free',
+    'google/gemma-3-27b-it:free',
+    'x-ai/grok-4-fast:free',
+}
+
 # Validate API keys on startup
 if not NVIDIA_API_KEY:
     print("WARNING: NVIDIA_API_KEY environment variable not set!")
@@ -44,148 +58,37 @@ def chat():
         
         data = request.get_json()
         user_message = data.get('message', '')
+        session_id = data.get('session_id', 'default')  # Get session ID for conversation persistence
         
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
         
         # Get model from request
         selected_model = data.get('model', 'meta/llama-4-maverick-17b-128e-instruct')
-        # allowlisted models supported by UI
-        allowed_models = set([
-            'meta/llama-4-maverick-17b-128e-instruct',
-            'deepseek-ai/deepseek-r1',
-            'qwen/qwen2.5-coder-32b-instruct',
-            'qwen/qwen3-coder-480b-a35b-instruct',
-            'deepseek-ai/deepseek-v3.1',
-            'openai/gpt-oss-120b',
-            'qwen/qwen3-235b-a22b:free',
-            'google/gemma-3-27b-it:free',
-            'x-ai/grok-4-fast:free',
-        ])
-        if selected_model not in allowed_models:
-            return jsonify({'error': 'Unsupported model selected', 'allowed': sorted(list(allowed_models))}), 400
+        if selected_model not in ALLOWED_MODELS:
+            return jsonify({'error': 'Unsupported model', 'allowed': sorted(list(ALLOWED_MODELS))}), 400
         
-        # Enhanced prompt for better code responses with professional communication guidelines
-        enhanced_prompt = f"""You are a highly professional, authoritative, and reliable AI assistant. When providing code examples, you MUST format them properly with markdown code blocks.
-
-PROFESSIONAL COMMUNICATION GUIDELINES - FOLLOW THESE EXACTLY:
-
-**Communication Standards:**
-- Communicate clearly, concisely, and without ambiguity
-- Maintain a consistently formal, courteous, and respectful tone
-- Avoid offensive, inappropriate, or unprofessional language under all circumstances
-- Prioritize user objectives and intentions in every response
-- Adapt explanations to the user's knowledge level and context
-- Deliver actionable, practical, and high-value insights wherever possible
-
-**Content Quality:**
-- Minimize filler words, redundancy, and irrelevant content
-- Ensure all sentences are grammatically correct, well-structured, and polished
-- Favor clarity and readability over verbosity or unnecessary complexity
-- Provide information that is factually accurate, verifiable, and reliable
-- Never fabricate, guess, or hallucinate information
-- Clearly indicate uncertainty when present
-
-**Formatting Requirements:**
-- Use bullet points for enumerating items, examples, or options
-- Use numbered lists for stepwise instructions or processes
-- Highlight key terms or phrases with bold formatting
-- Use italics selectively for emphasis or clarification
-- Structure long responses into sections with clear headings or subheadings
-- Keep paragraphs concise (2–4 sentences preferred)
-- Maintain formatting consistency throughout responses
-
-**Response Structure:**
-- Conclude responses with actionable takeaways or recommended next steps
-- Summarize key insights at the conclusion of explanations
-- Provide direct answers before context, background, or elaboration
-- End responses with a concise summary, actionable takeaway, or next step guidance
-
-**Professional Standards:**
-- Follow user instructions exactly, without deviation unless clarification is needed
-- Handle incomplete, vague, or partially provided queries gracefully
-- Maintain composure, neutrality, and professionalism in all interactions
-- Acknowledge limitations or knowledge gaps transparently
-- Correct any inaccuracies promptly and professionally
-
-**Non-Code Response Guidelines:**
-- Do not provide code unless the user explicitly requests it
-- For non-code queries, always deliver responses in professional, structured Markdown text
-- Use headings for major topics, bold for emphasis, and bullet/numbered lists for clarity
-- Always include a Summary section at the end of long or complex explanations
-- Where appropriate, include a Next Steps or Recommendations section for actionable guidance
-- If the user asks for formatting (e.g., professional write-up), structure the response like a report or executive summary, not as raw HTML/JS unless explicitly requested
-- Keep formatting consistent with polished reports, documentation, or structured notes
-- For casual/normal chat, respond naturally and conversationally — avoid technical or code-based outputs unless relevant
-- Maintain a clear separation between chat-style answers (conversational, direct) and document-style answers (structured, formatted)
-- When providing examples, prefer conceptual explanations or pseudo-structured outlines instead of code, unless coding is explicitly part of the request
-
-CRITICAL FORMATTING RULES - FOLLOW THESE EXACTLY:
-1. For ANY code example, ALWAYS use this EXACT format:
-```python
-your code here
-```
-
-2. For shell/terminal output, ALWAYS use this EXACT format:
-```shell
-your terminal output here
-```
-
-3. For inline code, use backticks: `code`
-
-4. NEVER put code on the same line as the opening triple backticks
-5. ALWAYS specify the language after the opening triple backticks
-6. ALWAYS put the closing triple backticks on a new line
-7. Make sure there are no extra spaces or characters around the code blocks
-8. The opening ``` must be on its own line
-9. The closing ``` must be on its own line
-10. There must be a blank line before and after code blocks
-
-Example of CORRECT formatting:
-```python
-def hello_world():
-    print("Hello, World!")
-```
-
-Example of INCORRECT formatting:
-```python def hello_world():
-    print("Hello, World!")
-```
-
-IMPORTANT: If you provide ANY code, it MUST be wrapped in proper markdown code blocks. No exceptions.
-
-ADDITIONAL RULE: Never include your internal thoughts, reasoning, or <think>...</think> style outputs. Only provide the final answer to the user. Do not output your reasoning process or any meta-commentary. The user only wants the answer, not your thinking process.
-
-User question: {user_message}"""
+        # Get conversation memory manager for this session
+        memory_manager = get_memory_manager(session_id)
+        memory_manager.set_model(selected_model)
+        
+        # Add user message to conversation history
+        memory_manager.add_message('user', user_message)
+        
+        # Get conversation buffer for API call
+        conversation_messages = memory_manager.get_conversation_buffer()
 
         # Determine API provider and prepare request
         if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free', 'x-ai/grok-4-fast:free']:
-            # OpenRouter API
-            payload = {
-                "model": selected_model,
-                "messages": [{"role": "user", "content": enhanced_prompt}],
-                "max_tokens": 1024,
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "frequency_penalty": 0.0,
-                "presence_penalty": 0.0,
-                "stream": False
-            }
-            
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "http://localhost:8000",
                 "X-Title": "NVIDIA Chatbot"
             }
-            
-            response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload)
-            
-        else:
-            # NVIDIA API (default)
             payload = {
                 "model": selected_model,
-                "messages": [{"role": "user", "content": enhanced_prompt}],
+                "messages": conversation_messages,
                 "max_tokens": 1024,
                 "temperature": 0.7,
                 "top_p": 0.9,
@@ -193,55 +96,91 @@ User question: {user_message}"""
                 "presence_penalty": 0.0,
                 "stream": False
             }
-            
+            response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload)
+        else:
             headers = {
                 "Authorization": f"Bearer {NVIDIA_API_KEY}",
                 "Accept": "application/json",
                 "Content-Type": "application/json"
             }
-            
+            payload = {
+                "model": selected_model,
+                "messages": conversation_messages,
+                "max_tokens": 1024,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "frequency_penalty": 0.0,
+                "presence_penalty": 0.0,
+                "stream": False
+            }
             response = requests.post(NVIDIA_API_URL, headers=headers, json=payload)
         
         if response.status_code == 200:
             api_response = response.json()
             bot_message = api_response['choices'][0]['message']['content']
             
-            # Debug: Print the actual response from NVIDIA API
-            print(f"NVIDIA API Response: {bot_message[:200]}...")
+            # Add assistant response to conversation memory
+            memory_manager.add_message('assistant', bot_message)
+            
+            # Debug: Print the actual response from API
+            print(f"API Response: {bot_message[:200]}...")
             
             # Check if the response is the welcome message (this should not happen)
             if "Hello! I'm your NVIDIA-powered chatbot with advanced capabilities" in bot_message:
-                print("ERROR: NVIDIA API returned welcome message instead of processing user input")
-                return jsonify({
-                    'error': 'NVIDIA API returned unexpected response. Please check API configuration.',
-                    'model': selected_model
-                }), 500
+                return jsonify({'error': 'NVIDIA API returned unexpected response. Please check API configuration.'}), 500
             
-            # Handle DeepSeek reasoning content if available
             reasoning_content = api_response['choices'][0]['message'].get('reasoning_content', None)
-            if reasoning_content and selected_model == 'deepseek-ai/deepseek-r1':
-                # For DeepSeek, we can optionally include reasoning
-                return jsonify({
-                    'response': bot_message,
-                    'reasoning': reasoning_content,
-                    'model': selected_model
-                })
-            
-            return jsonify({
+            response_data = {
                 'response': bot_message,
-                'model': selected_model
-            })
+                'model': selected_model,
+                'conversation_stats': memory_manager.get_conversation_stats()
+            }
+            if reasoning_content and selected_model == 'deepseek-ai/deepseek-r1':
+                response_data['reasoning'] = reasoning_content
+            
+            # Cleanup old sessions periodically
+            cleanup_old_sessions()
+            
+            return jsonify(response_data)
         else:
-            print(f"NVIDIA API Error: {response.status_code} - {response.text}")
-            return jsonify({'error': 'Failed to get response from AI'}), 500
+            return jsonify({'error': f"API error {response.status_code}: {response.text}"}), 500
             
     except Exception as e:
-        print(f"Server Error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({'error': f"Internal server error: {str(e)}"}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy'})
+
+@app.route('/api/conversation/stats', methods=['GET'])
+def get_conversation_stats():
+    """Get conversation statistics for a session."""
+    session_id = request.args.get('session_id', 'default')
+    memory_manager = get_memory_manager(session_id)
+    return jsonify(memory_manager.get_conversation_stats())
+
+@app.route('/api/conversation/clear', methods=['POST'])
+def clear_conversation():
+    """Clear conversation history for a session."""
+    data = request.get_json() or {}
+    session_id = data.get('session_id', 'default')
+    keep_system_prompt = data.get('keep_system_prompt', True)
+    
+    memory_manager = get_memory_manager(session_id)
+    memory_manager.clear_conversation(keep_system_prompt)
+    
+    return jsonify({
+        'success': True,
+        'message': 'Conversation cleared',
+        'stats': memory_manager.get_conversation_stats()
+    })
+
+@app.route('/api/conversation/export', methods=['GET'])
+def export_conversation():
+    """Export conversation data for debugging/persistence."""
+    session_id = request.args.get('session_id', 'default')
+    memory_manager = get_memory_manager(session_id)
+    return jsonify(memory_manager.export_conversation())
 
 if __name__ == '__main__':
     print("Starting NVIDIA Chatbot Server...")
