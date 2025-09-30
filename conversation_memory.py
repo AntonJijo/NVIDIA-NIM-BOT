@@ -12,7 +12,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-import tiktoken
+from tokenizers import Tokenizer
 
 
 @dataclass
@@ -39,24 +39,29 @@ class TokenCounter:
     """Handles token counting for different models."""
     
     def __init__(self):
-        # Initialize tokenizer (using GPT-3.5 encoding as baseline)
+        # Initialize tokenizer (using GPT-2 tokenizer as baseline)
         try:
-            self.tokenizer = tiktoken.get_encoding("cl100k_base")
-        except Exception:
+            # Use the tokenizers library directly with pre-trained GPT-2 tokenizer
+            self.tokenizer = Tokenizer.from_pretrained("gpt2")
+        except Exception as e:
+            print(f"Warning: Could not load tokenizer: {e}")
             self.tokenizer = None
     
     def count_tokens(self, text: str, model: Optional[str] = None) -> int:
         """
         Estimate token count for given text.
-        Uses tiktoken for accurate counting when available, falls back to approximation.
+        Uses Hugging Face tokenizers for accurate counting when available, falls back to approximation.
         """
         if not text:
             return 0
             
         if self.tokenizer:
             try:
-                return len(self.tokenizer.encode(text))
-            except Exception:
+                # Encode the text and return the number of tokens
+                encoding = self.tokenizer.encode(text)
+                return len(encoding.ids)
+            except Exception as e:
+                print(f"Tokenization error: {e}")
                 pass
         
         # Fallback approximation: ~4 characters per token
