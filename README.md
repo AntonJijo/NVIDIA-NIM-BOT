@@ -21,6 +21,7 @@ Our chatbot supports multiple state-of-the-art LLMs:
 - **Qwen 2.5 & 3 series**
 - **Google Gemma 3 27B**
 - **OpenAI GPT OSS 120B**
+- **X'AI GROK 4**
 
 More models can be added easily!
 
