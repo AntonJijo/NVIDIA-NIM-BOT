@@ -40,7 +40,6 @@ ALLOWED_MODELS = {
     'openai/gpt-oss-120b',
     'qwen/qwen3-235b-a22b:free',
     'google/gemma-3-27b-it:free',
-    'x-ai/grok-4-fast:free',
 }
 
 # Validate API keys on startup
@@ -79,7 +78,7 @@ def chat():
         conversation_messages = memory_manager.get_conversation_buffer()
 
         # Determine API provider and prepare request
-        if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free', 'x-ai/grok-4-fast:free']:
+        if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free']:
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
@@ -90,7 +89,7 @@ def chat():
                 "model": selected_model,
                 "messages": conversation_messages,
                 "max_tokens": 1024,
-                "temperature": 0.7,
+                "temperature": 0.6,
                 "top_p": 0.9,
                 "frequency_penalty": 0.0,
                 "presence_penalty": 0.0,
@@ -107,7 +106,7 @@ def chat():
                 "model": selected_model,
                 "messages": conversation_messages,
                 "max_tokens": 1024,
-                "temperature": 0.7,
+                "temperature": 0.6,
                 "top_p": 0.9,
                 "frequency_penalty": 0.0,
                 "presence_penalty": 0.0,
