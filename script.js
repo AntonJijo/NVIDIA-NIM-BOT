@@ -84,10 +84,14 @@ class Chatbot {
 
             for (const serverURL of servers) {
                 try {
+                    console.log(`Fetching stats from: ${serverURL}/api/conversation/stats?session_id=${this.sessionId}`);
                     const response = await fetch(`${serverURL}/api/conversation/stats?session_id=${this.sessionId}`);
                     if (response.ok) {
                         this.conversationStats = await response.json();
+                        console.log('Stats fetched successfully:', this.conversationStats);
                         return this.conversationStats;
+                    } else {
+                        console.warn(`Failed to fetch stats from ${serverURL}: ${response.status}`);
                     }
                 } catch (error) {
                     console.warn(`Failed to get stats from ${serverURL}:`, error);
@@ -417,8 +421,10 @@ class Chatbot {
     }
     
     async loadInitialStats() {
+        console.log('Loading initial conversation stats...');
         // Load conversation stats on page load
         const stats = await this.getConversationStats();
+        console.log('Initial stats loaded:', stats);
         if (stats) {
             this.updateConversationStatsUI();
         }
@@ -693,8 +699,11 @@ class Chatbot {
 
                 // Update conversation stats if available
                 if (data.conversation_stats) {
+                    console.log('Received conversation stats:', data.conversation_stats);
                     this.conversationStats = data.conversation_stats;
                     this.updateConversationStatsUI();
+                } else {
+                    console.warn('No conversation stats received from server');
                 }
 
                 // Success! Update status and return response
@@ -2334,8 +2343,10 @@ class Chatbot {
     }
 
     updateConversationStatsUI() {
+        console.log('updateConversationStatsUI called with stats:', this.conversationStats);
+        
         if (!this.conversationStats) {
-            // Hide stats display if no real conversation stats exist
+            console.log('No conversation stats available, hiding display');
             const statsElement = document.getElementById('conversationStats');
             if (statsElement) {
                 statsElement.style.display = 'none';
@@ -2344,9 +2355,12 @@ class Chatbot {
         }
         
         const { total_tokens, max_tokens, utilization_percent, current_model } = this.conversationStats;
+        console.log('Stats details:', { total_tokens, max_tokens, utilization_percent, current_model });
         
-        // Only show loader if there are actual tokens being used
-        if (total_tokens === 0 || !current_model) {
+        // Show loader even with 0 tokens if we have valid stats and a model
+        // This allows users to see that stats tracking is working
+        if (!current_model) {
+            console.log('No current model, hiding stats');
             const statsElement = document.getElementById('conversationStats');
             if (statsElement) {
                 statsElement.style.display = 'none';
