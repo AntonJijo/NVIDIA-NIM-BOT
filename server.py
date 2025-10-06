@@ -10,6 +10,9 @@ from flask_cors import CORS
 import requests
 import json
 from conversation_memory import get_memory_manager, cleanup_old_sessions
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
@@ -145,7 +148,8 @@ def chat():
             return jsonify({'error': f"API error {response.status_code}: {response.text}"}), 500
             
     except Exception as e:
-        return jsonify({'error': f"Internal server error: {str(e)}"}), 500
+        logging.exception("Unhandled exception in chat endpoint")
+        return jsonify({'error': "Internal server error"}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
