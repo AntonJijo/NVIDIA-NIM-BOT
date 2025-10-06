@@ -32,7 +32,7 @@ class Chatbot {
         }
         
         // Generate a unique session ID for conversation persistence
-        const newSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const newSessionId = 'session_' + Date.now() + '_' + this._secureRandomString(9);
         
         // Store the new session ID in localStorage
         localStorage.setItem('chatbot_session_id', newSessionId);
@@ -43,7 +43,7 @@ class Chatbot {
     
     createNewSession() {
         // Force create a new session and store it
-        const newSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const newSessionId = 'session_' + Date.now() + '_' + this._secureRandomString(9);
         localStorage.setItem('chatbot_session_id', newSessionId);
         this.sessionId = newSessionId;
         
@@ -53,6 +53,17 @@ class Chatbot {
         this.clearConversation();
         
         return newSessionId;
+    }
+
+    /**
+     * Generate a cryptographically secure random string
+     * @param {number} length - number of bytes, not final string length
+     */
+    _secureRandomString(length) {
+        const array = new Uint8Array(length);
+        window.crypto.getRandomValues(array);
+        // Convert bytes to hex string
+        return Array.from(array).map(b => ('0' + b.toString(16)).slice(-2)).join('');
     }
 
     async getConversationStats() {
