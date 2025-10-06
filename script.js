@@ -139,7 +139,6 @@ class Chatbot {
                 <p><strong>OpenAI:</strong> GPT-OSS 120B</p>
                 <p><strong>Qwen:</strong> Qwen3 235B A22B</p>
                 <p><strong>Google:</strong> Gemma 3 27B IT</p>
-                <p><strong>X.AI:</strong> Grok 4 Fast</p>
                 <p><strong>Select</strong> your preferred model above and start chatting!</p>
             </div>
         `;
@@ -349,8 +348,7 @@ class Chatbot {
             'deepseek-ai/deepseek-v3.1': 'DeepSeek V3.1',
             'openai/gpt-oss-120b': 'GPT-OSS 120B',
             'qwen/qwen3-235b-a22b:free': 'Qwen3 235B A22B',
-            'google/gemma-3-27b-it:free': 'Gemma 3 27B IT',
-            'x-ai/grok-4-fast:free': 'Grok 4 Fast'
+            'google/gemma-3-27b-it:free': 'Gemma 3 27B IT'
         };
         return modelNames[modelValue] || modelValue;
     }
@@ -456,10 +454,6 @@ class Chatbot {
                                 <div class="model-option" data-model="google/gemma-3-27b-it:free">
                                     <div class="model-name">Gemma 3 27B IT</div>
                                     <div class="model-description">Google's instruction-tuned model</div>
-                                </div>
-                                <div class="model-option" data-model="x-ai/grok-4-fast:free">
-                                    <div class="model-name">Grok 4 Fast</div>
-                                    <div class="model-description">X.AI's fast response model</div>
                                 </div>
                             </div>
                         </div>
