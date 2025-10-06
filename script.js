@@ -2563,8 +2563,10 @@ class Chatbot {
                     
                     if (response.ok) {
                         connected = true;
-                        const serverName = serverURL.includes('render.com') ? 'Primary' : 
-                                         serverURL.includes('pythonanywhere.com') ? 'Failover' : 'Local';
+                        const serverHost = (new URL(serverURL)).hostname;
+                        const serverName = serverHost === 'nvidia-nim-bot.onrender.com' ? 'Primary' :
+                            (serverHost === 'nvidia.pythonanywhere.com' ||
+                             serverHost.endsWith('.pythonanywhere.com')) ? 'Failover' : 'Local';
                         connectedServer = serverName;
                         console.log(`Server ${serverName} is online: ${serverURL}`);
                         break; // Found working server, stop checking
