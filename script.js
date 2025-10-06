@@ -749,7 +749,7 @@ class Chatbot {
         avatar.className = 'message-avatar';
         if (sender === 'user') {
             const userIcon = document.createElement('img');
-            userIcon.src = 'https://img.icons8.com/fluency-systems-regular/48/user--v1.png';
+            userIcon.src = 'https://img.icons8.com/puffy-filled/48/user.png';
             userIcon.alt = 'User';
             userIcon.className = 'user-avatar-icon';
             avatar.appendChild(userIcon);
@@ -784,7 +784,7 @@ class Chatbot {
         avatar.className = 'message-avatar';
         if (sender === 'user') {
             const userIcon = document.createElement('img');
-            userIcon.src = 'https://img.icons8.com/fluency-systems-regular/48/user--v1.png';
+            userIcon.src = 'https://img.icons8.com/puffy-filled/48/user.png';
             userIcon.alt = 'User';
             userIcon.className = 'user-avatar-icon';
             avatar.appendChild(userIcon);
