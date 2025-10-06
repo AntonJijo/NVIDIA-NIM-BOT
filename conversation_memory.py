@@ -68,26 +68,29 @@ class TokenCounter:
             except Exception as e:
                 print(f"SentencePiece tokenization error: {e}")
                 
-        # Improved fallback: more accurate token estimation
-        # Split by whitespace to approximate words, then estimate tokens per word
+        # More aggressive estimation to match real LLM tokenization
+        # Modern tokenizers (GPT-4, Llama, etc.) typically produce more tokens
         words = text.split()
         word_count = len(words)
+        char_count = len(text)
         
-        # More accurate estimation based on model type:
-        # - GPT/Llama models: ~1.5 tokens per word for English text
-        # - Account for subword tokenization of longer words
-        # - Add tokens for special characters, numbers, and punctuation
-        base_multiplier = 1.5  # Increased from 1.3 to be more realistic
-        
+        # Base estimation: 2.0 tokens per word (increased from 1.5)
+        # This better matches actual LLM tokenization patterns
+        base_multiplier = 2.0
         estimated_tokens = int(word_count * base_multiplier)
         
-        # Add extra tokens for special characters, numbers, and punctuation
+        # Additional tokens for special characters and punctuation
         special_chars = sum(1 for c in text if not c.isalnum() and not c.isspace())
-        estimated_tokens += max(0, special_chars // 2)  # Increased from //3 to //2
+        estimated_tokens += special_chars // 2
         
-        # Account for longer words (more likely to be tokenized into multiple subwords)
-        long_words = sum(1 for word in words if len(word) > 8)
-        estimated_tokens += long_words // 2
+        # Account for longer words (subword tokenization)
+        long_words = sum(1 for word in words if len(word) > 6)  # Lowered threshold
+        estimated_tokens += long_words
+        
+        # Character-based adjustment for very long text
+        # Modern tokenizers tend to use more tokens for longer content
+        if char_count > 1000:
+            estimated_tokens += char_count // 50  # Extra tokens for very long content
         
         # Minimum of 1 token for non-empty text
         return max(1, estimated_tokens)
@@ -323,13 +326,25 @@ _memory_managers: Dict[str, ConversationMemoryManager] = {}
 
 
 def get_memory_manager(session_id: str = "default", fmt: str = "markdown") -> ConversationMemoryManager:
+    print(f"DEBUG: Getting memory manager for session {session_id}")
+    print(f"DEBUG: Current sessions in memory: {list(_memory_managers.keys())}")
+    
     if session_id not in _memory_managers:
+        print(f"DEBUG: Creating new memory manager for session {session_id}")
         _memory_managers[session_id] = ConversationMemoryManager(session_id, fmt=fmt)
+    else:
+        print(f"DEBUG: Using existing memory manager for session {session_id}")
+        print(f"DEBUG: Existing session has {len(_memory_managers[session_id].messages)} messages")
+    
     return _memory_managers[session_id]
 
 
 def cleanup_old_sessions(max_sessions: int = 100):
+    print(f"DEBUG: Cleanup called - current sessions: {len(_memory_managers)}, max: {max_sessions}")
     if len(_memory_managers) > max_sessions:
         oldest = sorted(_memory_managers.keys())[: len(_memory_managers) - max_sessions]
+        print(f"DEBUG: Removing old sessions: {oldest}")
         for sid in oldest:
             del _memory_managers[sid]
+    else:
+        print(f"DEBUG: No cleanup needed - {len(_memory_managers)} sessions below limit")

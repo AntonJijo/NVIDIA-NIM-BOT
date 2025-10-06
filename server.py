@@ -144,8 +144,8 @@ def chat():
                 if reasoning_content and selected_model == 'deepseek-ai/deepseek-r1':
                     response_data['reasoning'] = reasoning_content
                 
-                # Cleanup old sessions periodically
-                cleanup_old_sessions()
+                # Cleanup old sessions periodically (less aggressive)
+                cleanup_old_sessions(max_sessions=500)  # Increased from 100
                 
                 return jsonify(response_data)
             except (KeyError, IndexError, TypeError) as e:
