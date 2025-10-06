@@ -129,7 +129,7 @@ def enforce_formatting(text: str, fmt: str = "markdown") -> str:
             import yaml
             return yaml.dump({"response": text}, sort_keys=False)
         except ImportError:
-            return f"response: |\n  {text.replace('\n', '\n  ')}"
+            indented_text = text.replace('\n', '\n  ')
+            return f"response: |\n  {indented_text}"
 
     # Default: markdown (no transformation)
-    return text
