@@ -263,7 +263,7 @@ class Chatbot {
                             <div class="stats-grid">
                                 <div class="stat-item">
                                     <span class="stat-label">Model:</span>
-                                    <span class="stat-value">${this.getModelDisplayName(currentModel)}</span>
+                                    <span class="stat-value">${this.escapeHTML(this.getModelDisplayName(currentModel))}</span>
                                 </div>
                                 <div class="stat-item">
                                     <span class="stat-label">Messages:</span>
@@ -285,7 +285,7 @@ class Chatbot {
                         <div class="new-session-info">
                             <h4>New Session</h4>
                             <div class="new-model-display">
-                                <span class="new-model-name">${this.getModelDisplayName(newModel)}</span>
+                                <span class="new-model-name">${this.escapeHTML(this.getModelDisplayName(newModel))}</span>
                                 <span class="fresh-start">Fresh conversation start</span>
                             </div>
                         </div>
