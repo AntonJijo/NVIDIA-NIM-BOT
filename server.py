@@ -92,7 +92,7 @@ def chat():
                 "model": selected_model,
                 "messages": conversation_messages,
                 "max_tokens": 1024,
-                "temperature": 0.6,
+                "temperature": 0.7,
                 "top_p": 0.9,
                 "frequency_penalty": 0.0,
                 "presence_penalty": 0.0,
@@ -109,7 +109,7 @@ def chat():
                 "model": selected_model,
                 "messages": conversation_messages,
                 "max_tokens": 1024,
-                "temperature": 0.6,
+                "temperature": 0.7,
                 "top_p": 0.9,
                 "frequency_penalty": 0.0,
                 "presence_penalty": 0.0,
@@ -189,4 +189,5 @@ if __name__ == '__main__':
     print("Starting NVIDIA Chatbot Server...")
     port = int(os.getenv('PORT', 5000))  # Use PORT from environment or default to 5000
     print(f"Backend API: http://0.0.0.0:{port}")
+
     app.run(host='0.0.0.0', port=port, debug=False)  # Disable debug in production
