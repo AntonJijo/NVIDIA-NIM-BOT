@@ -13,7 +13,13 @@ import json
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-import sentencepiece as spm
+
+# SentencePiece is optional - if not available, we'll use fallback tokenization
+try:
+    import sentencepiece as spm  # type: ignore
+except ImportError:
+    spm = None
+    print("Warning: SentencePiece not available, using fallback tokenization")
 
 # Import strict global persona + formatting enforcement
 from system_prompts import get_master_system_prompt, enforce_formatting
@@ -43,10 +49,11 @@ class TokenCounter:
     """Handles token counting for different models."""
 
     def __init__(self):
+        self.tokenizer = None
         try:
-            self.tokenizer = spm.SentencePieceProcessor()
-            self.tokenizer = None  # fallback (no trained tokenizer available)
-            print("Info: Using character-based token approximation")
+            # Note: SentencePiece requires a trained model file to function
+            # For now, we use an improved fallback estimation
+            print("Info: Using improved token approximation (no trained model available)")
         except Exception as e:
             print(f"Warning: Could not initialize SentencePiece tokenizer: {e}")
             self.tokenizer = None
@@ -54,12 +61,30 @@ class TokenCounter:
     def count_tokens(self, text: str, model: Optional[str] = None) -> int:
         if not text:
             return 0
+            
         if self.tokenizer:
             try:
                 return len(self.tokenizer.encode(text, out_type=int))
             except Exception as e:
                 print(f"SentencePiece tokenization error: {e}")
-        return max(1, len(text) // 4)
+                
+        # Improved fallback: more accurate token estimation
+        # Split by whitespace to approximate words, then estimate tokens per word
+        words = text.split()
+        word_count = len(words)
+        
+        # More accurate estimation:
+        # - Average 1.3 tokens per word for English text
+        # - Add tokens for punctuation and special characters
+        # - Account for subword tokenization
+        estimated_tokens = int(word_count * 1.3)
+        
+        # Add extra tokens for special characters, numbers, and punctuation
+        special_chars = sum(1 for c in text if not c.isalnum() and not c.isspace())
+        estimated_tokens += max(0, special_chars // 3)
+        
+        # Minimum of 1 token for non-empty text
+        return max(1, estimated_tokens)
 
     def count_message_tokens(self, message: Dict[str, str], model: Optional[str] = None) -> int:
         return self.count_tokens(message.get("content", ""), model) + 10
