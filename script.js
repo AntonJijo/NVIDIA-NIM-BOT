@@ -1,4 +1,14 @@
 class Chatbot {
+    // Escape HTML meta-characters from a string
+    escapeHTML(str) {
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
     constructor() {
         this.messages = [];
         this.isLoading = false;
@@ -474,7 +484,7 @@ class Chatbot {
                             <div class="session-summary">
                                 <div class="summary-item">
                                     <span class="summary-label">Model:</span>
-                                    <span class="summary-value">${this.getModelDisplayName(currentStats.current_model || currentModel)}</span>
+                                    <span class="summary-value">${this.escapeHTML(this.getModelDisplayName(currentStats.current_model || currentModel))}</span>
                                 </div>
                                 <div class="summary-item">
                                     <span class="summary-label">Tokens Used:</span>
