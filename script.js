@@ -688,8 +688,18 @@ class Chatbot {
                 }
 
                 // Success! Update status and return response
-                const serverName = serverURL.includes('render.com') ? 'Primary' : 
-                                 serverURL.includes('pythonanywhere.com') ? 'Failover' : 'Local';
+                let serverName = 'Local';
+                try {
+                    const urlObj = new URL(serverURL);
+                    const hostname = urlObj.hostname;
+                    if (hostname === 'render.com' || hostname.endsWith('.render.com')) {
+                        serverName = 'Primary';
+                    } else if (hostname === 'pythonanywhere.com' || hostname.endsWith('.pythonanywhere.com')) {
+                        serverName = 'Failover';
+                    }
+                } catch(e) {
+                    // If invalid URL, keep serverName as 'Local'
+                }
                 this.updateStatus(`Connected (${serverName})`, '#4ade80');
                 console.log(`Successfully connected to ${serverName} server: ${serverURL}`);
                 
