@@ -179,17 +179,23 @@ class ConversationMemoryManager:
         return self.MODEL_CONFIGS.get(self.current_model, ModelConfig("Default", 32_000))
 
     def add_message(self, role: str, content: str, is_pinned: bool = False) -> ConversationMessage:
+        # Handle None content gracefully
+        if content is None:
+            print(f"WARNING: Received None content for {role} message, using empty string")
+            content = ""
+        
         # Strictly enforce formatting only for assistant outputs
         if role == "assistant":
             content = enforce_formatting(content, self.format)
 
         token_count = self.token_counter.count_tokens(content, self.current_model)
-        print(f"DEBUG: Adding {role} message with {len(content)} chars, estimated {token_count} tokens")
-        print(f"DEBUG: Content preview: {content[:100]}...")
+        content_length = len(content) if content else 0
+        print(f"DEBUG: Adding {role} message with {content_length} chars, estimated {token_count} tokens")
+        print(f"DEBUG: Content preview: {content[:100] if content else 'EMPTY'}...")
         
         msg = ConversationMessage(
             role=role,
-            content=content,
+            content=content or "",  # Ensure content is never None
             timestamp=datetime.now(timezone.utc),
             token_count=token_count,
             is_pinned=is_pinned,

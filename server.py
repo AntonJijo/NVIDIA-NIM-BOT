@@ -10,9 +10,6 @@ from flask_cors import CORS
 import requests
 import json
 from conversation_memory import get_memory_manager, cleanup_old_sessions
-import logging
-
-logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
@@ -43,6 +40,7 @@ ALLOWED_MODELS = {
     'openai/gpt-oss-120b',
     'qwen/qwen3-235b-a22b:free',
     'google/gemma-3-27b-it:free',
+    'x-ai/grok-4-fast:free',
 }
 
 # Validate API keys on startup
@@ -81,7 +79,7 @@ def chat():
         conversation_messages = memory_manager.get_conversation_buffer()
 
         # Determine API provider and prepare request
-        if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free']:
+        if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free', 'x-ai/grok-4-fast:free']:
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
@@ -118,38 +116,54 @@ def chat():
             response = requests.post(NVIDIA_API_URL, headers=headers, json=payload)
         
         if response.status_code == 200:
-            api_response = response.json()
-            bot_message = api_response['choices'][0]['message']['content']
-            
-            # Add assistant response to conversation memory
-            memory_manager.add_message('assistant', bot_message)
-            
-            # Debug: Print the actual response from API
-            print(f"API Response: {bot_message[:200]}...")
-            
-            # Check if the response is the welcome message (this should not happen)
-            if "Hello! I'm your NVIDIA-powered chatbot with advanced capabilities" in bot_message:
-                return jsonify({'error': 'NVIDIA API returned unexpected response. Please check API configuration.'}), 500
-            
-            reasoning_content = api_response['choices'][0]['message'].get('reasoning_content', None)
-            response_data = {
-                'response': bot_message,
-                'model': selected_model,
-                'conversation_stats': memory_manager.get_conversation_stats()
-            }
-            if reasoning_content and selected_model == 'deepseek-ai/deepseek-r1':
-                response_data['reasoning'] = reasoning_content
-            
-            # Cleanup old sessions periodically
-            cleanup_old_sessions()
-            
-            return jsonify(response_data)
+            try:
+                api_response = response.json()
+                bot_message = api_response['choices'][0]['message']['content']
+                
+                # Validate bot_message is not None or empty
+                if not bot_message:
+                    print(f"WARNING: API returned empty/null content: {api_response}")
+                    bot_message = "I apologize, but I received an empty response. Please try again."
+                
+                # Add assistant response to conversation memory
+                memory_manager.add_message('assistant', bot_message)
+                
+                # Debug: Print the actual response from API
+                print(f"API Response: {bot_message[:200] if bot_message else 'EMPTY'}...")
+                
+                # Check if the response is the welcome message (this should not happen)
+                if bot_message and "Hello! I'm your NVIDIA-powered chatbot with advanced capabilities" in bot_message:
+                    return jsonify({'error': 'NVIDIA API returned unexpected response. Please check API configuration.'}), 500
+                
+                reasoning_content = api_response['choices'][0]['message'].get('reasoning_content', None)
+                response_data = {
+                    'response': bot_message,
+                    'model': selected_model,
+                    'conversation_stats': memory_manager.get_conversation_stats()
+                }
+                if reasoning_content and selected_model == 'deepseek-ai/deepseek-r1':
+                    response_data['reasoning'] = reasoning_content
+                
+                # Cleanup old sessions periodically
+                cleanup_old_sessions()
+                
+                return jsonify(response_data)
+            except (KeyError, IndexError, TypeError) as e:
+                print(f"ERROR: Failed to parse API response: {e}")
+                try:
+                    print(f"Raw API Response: {response.text[:500]}")
+                except:
+                    print("Could not print raw API response")
+                return jsonify({'error': 'Invalid API response format'}), 500
         else:
+            print(f"API Error: Status {response.status_code}, Response: {response.text[:500]}")
             return jsonify({'error': f"API error {response.status_code}: {response.text}"}), 500
             
     except Exception as e:
-        logging.exception("Unhandled exception in chat endpoint")
-        return jsonify({'error': "Internal server error"}), 500
+        print(f"ERROR: Unhandled exception in chat endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f"Internal server error: {str(e)}"}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -189,5 +203,4 @@ if __name__ == '__main__':
     print("Starting NVIDIA Chatbot Server...")
     port = int(os.getenv('PORT', 5000))  # Use PORT from environment or default to 5000
     print(f"Backend API: http://0.0.0.0:{port}")
-
     app.run(host='0.0.0.0', port=port, debug=False)  # Disable debug in production
