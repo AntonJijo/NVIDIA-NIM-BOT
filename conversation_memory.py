@@ -73,15 +73,21 @@ class TokenCounter:
         words = text.split()
         word_count = len(words)
         
-        # More accurate estimation:
-        # - Average 1.3 tokens per word for English text
-        # - Add tokens for punctuation and special characters
-        # - Account for subword tokenization
-        estimated_tokens = int(word_count * 1.3)
+        # More accurate estimation based on model type:
+        # - GPT/Llama models: ~1.5 tokens per word for English text
+        # - Account for subword tokenization of longer words
+        # - Add tokens for special characters, numbers, and punctuation
+        base_multiplier = 1.5  # Increased from 1.3 to be more realistic
+        
+        estimated_tokens = int(word_count * base_multiplier)
         
         # Add extra tokens for special characters, numbers, and punctuation
         special_chars = sum(1 for c in text if not c.isalnum() and not c.isspace())
-        estimated_tokens += max(0, special_chars // 3)
+        estimated_tokens += max(0, special_chars // 2)  # Increased from //3 to //2
+        
+        # Account for longer words (more likely to be tokenized into multiple subwords)
+        long_words = sum(1 for word in words if len(word) > 8)
+        estimated_tokens += long_words // 2
         
         # Minimum of 1 token for non-empty text
         return max(1, estimated_tokens)
@@ -177,14 +183,22 @@ class ConversationMemoryManager:
         if role == "assistant":
             content = enforce_formatting(content, self.format)
 
+        token_count = self.token_counter.count_tokens(content, self.current_model)
+        print(f"DEBUG: Adding {role} message with {len(content)} chars, estimated {token_count} tokens")
+        print(f"DEBUG: Content preview: {content[:100]}...")
+        
         msg = ConversationMessage(
             role=role,
             content=content,
             timestamp=datetime.now(timezone.utc),
-            token_count=self.token_counter.count_tokens(content, self.current_model),
+            token_count=token_count,
             is_pinned=is_pinned,
         )
         self.messages.append(msg)
+        
+        total_before = self._calculate_total_tokens() - token_count
+        print(f"DEBUG: Total tokens before: {total_before}, after: {self._calculate_total_tokens()}")
+        
         self._manage_buffer_size()
         return msg
 
@@ -257,6 +271,11 @@ class ConversationMemoryManager:
     def get_conversation_stats(self) -> Dict[str, Any]:
         cfg = self.get_model_config()
         total = self._calculate_total_tokens()
+        
+        print(f"DEBUG: Stats calculation - {len(self.messages)} messages, {total} total tokens")
+        for i, msg in enumerate(self.messages):
+            print(f"DEBUG: Message {i}: {msg.role} - {msg.token_count} tokens - {len(msg.content)} chars")
+        
         return {
             "session_id": self.session_id,
             "current_model": self.current_model,
