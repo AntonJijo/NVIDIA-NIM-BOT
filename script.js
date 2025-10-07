@@ -37,7 +37,7 @@ class Chatbot {
         const existingSessionId = localStorage.getItem('chatbot_session_id');
         
         if (existingSessionId) {
-            console.log('Resuming existing session:', existingSessionId);
+            console.log('Session resumed');
             return existingSessionId;
         }
         
@@ -46,7 +46,7 @@ class Chatbot {
         
         // Store the new session ID in localStorage
         localStorage.setItem('chatbot_session_id', newSessionId);
-        console.log('Created new session:', newSessionId);
+        console.log('Session initialized');
         
         return newSessionId;
     }
@@ -57,7 +57,7 @@ class Chatbot {
         localStorage.setItem('chatbot_session_id', newSessionId);
         this.sessionId = newSessionId;
         
-        console.log('Forced new session creation:', newSessionId);
+        console.log('New session started');
         
         // Clear conversation and reset stats
         this.clearConversation();
@@ -85,7 +85,7 @@ class Chatbot {
             for (const serverURL of servers) {
                 try {
                     console.log(`Fetching stats from: ${serverURL}/api/conversation/stats?session_id=${this.sessionId}`);
-                    const response = await fetch(`${serverURL}/api/conversation/stats?session_id=${this.sessionId}`);
+                    const response = await fetch(`${serverURL}/api/conversation/stats`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: this.sessionId }) });
                     if (response.ok) {
                         this.conversationStats = await response.json();
                         console.log('Stats fetched successfully:', this.conversationStats);
@@ -296,7 +296,7 @@ class Chatbot {
                     </div>
                     <div class="warning-notice">
                         <i class="fas fa-exclamation-triangle"></i>
-                        <span>Changing models will start a new session. Your current conversation will be cleared.</span>
+                        <span>Changing models will start a new session. Your current chat session will be cleared.</span>
                     </div>
                 </div>
                 <div class="modal-actions">
@@ -781,7 +781,7 @@ class Chatbot {
         // All servers failed
         this.updateStatus('Connection Failed', '#ef4444');
         console.error('All servers failed. Last error:', lastError);
-        throw lastError || new Error('All servers are unavailable');
+        throw lastError || new Error('All servers are Down');
     }
 
     updateModelInfo() {
