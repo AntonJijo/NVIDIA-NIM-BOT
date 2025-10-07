@@ -14,12 +14,12 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 
-# SentencePiece is optional - if not available, we'll use fallback tokenization
+# Use TikToken for accurate tokenization
 try:
-    import sentencepiece as spm  # type: ignore
+    import tiktoken
 except ImportError:
-    spm = None
-    print("Warning: SentencePiece not available, using fallback tokenization")
+    tiktoken = None
+    print("Warning: TikToken not available, using fallback tokenization")
 
 # Import strict global persona + formatting enforcement
 from system_prompts import get_master_system_prompt, enforce_formatting
@@ -46,17 +46,20 @@ class ModelConfig:
 
 
 class TokenCounter:
-    """Handles token counting for different models."""
+    """Handles token counting using TikToken for accurate results."""
 
     def __init__(self):
         self.tokenizer = None
-        try:
-            # Note: SentencePiece requires a trained model file to function
-            # For now, we use an improved fallback estimation
-            print("Info: Using improved token approximation (no trained model available)")
-        except Exception as e:
-            print(f"Warning: Could not initialize SentencePiece tokenizer: {e}")
-            self.tokenizer = None
+        if tiktoken:
+            try:
+                # Use GPT-4 tokenizer as it's most representative of modern LLMs
+                self.tokenizer = tiktoken.get_encoding("cl100k_base")  # GPT-4/ChatGPT tokenizer
+                print("Info: Using TikToken (GPT-4 tokenizer) for accurate token counting")
+            except Exception as e:
+                print(f"Warning: Could not initialize TikToken: {e}")
+                self.tokenizer = None
+        else:
+            print("Info: TikToken not available, using improved fallback")
 
     def count_tokens(self, text: str, model: Optional[str] = None) -> int:
         if not text:
@@ -64,35 +67,33 @@ class TokenCounter:
             
         if self.tokenizer:
             try:
-                return len(self.tokenizer.encode(text, out_type=int))
+                # Use TikToken for precise counting
+                tokens = self.tokenizer.encode(text)
+                return len(tokens)
             except Exception as e:
-                print(f"SentencePiece tokenization error: {e}")
+                print(f"TikToken error: {e}")
                 
-        # More aggressive estimation to match real LLM tokenization
-        # Modern tokenizers (GPT-4, Llama, etc.) typically produce more tokens
+        # Fallback estimation if TikToken fails
         words = text.split()
         word_count = len(words)
         char_count = len(text)
         
-        # Base estimation: 2.0 tokens per word (increased from 1.5)
-        # This better matches actual LLM tokenization patterns
-        base_multiplier = 2.0
+        # Aggressive estimation to match real tokenization
+        base_multiplier = 2.2  # Slightly higher for safety
         estimated_tokens = int(word_count * base_multiplier)
         
-        # Additional tokens for special characters and punctuation
+        # Additional tokens for special characters
         special_chars = sum(1 for c in text if not c.isalnum() and not c.isspace())
         estimated_tokens += special_chars // 2
         
-        # Account for longer words (subword tokenization)
-        long_words = sum(1 for word in words if len(word) > 6)  # Lowered threshold
+        # Long word penalty
+        long_words = sum(1 for word in words if len(word) > 6)
         estimated_tokens += long_words
         
         # Character-based adjustment for very long text
-        # Modern tokenizers tend to use more tokens for longer content
         if char_count > 1000:
-            estimated_tokens += char_count // 50  # Extra tokens for very long content
+            estimated_tokens += char_count // 40
         
-        # Minimum of 1 token for non-empty text
         return max(1, estimated_tokens)
 
     def count_message_tokens(self, message: Dict[str, str], model: Optional[str] = None) -> int:

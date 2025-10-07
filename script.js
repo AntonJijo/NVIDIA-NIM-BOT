@@ -583,6 +583,14 @@ class Chatbot {
         const count = this.messageInput.value.length;
         this.charCount.textContent = `${count}/5000`;
 
+        // Live token estimation for user feedback
+        const estimatedTokens = this.estimateTokens(this.messageInput.value);
+        
+        // Update character count with token estimate
+        if (estimatedTokens > 0) {
+            this.charCount.textContent = `${count}/5000 (~${estimatedTokens} tokens)`;
+        }
+
         if (count > 4500) {
             this.charCount.style.color = '#ef4444';
         } else if (count > 3500) {
@@ -600,6 +608,33 @@ class Chatbot {
             this.sendButton.style.opacity = '1';
             this.sendButton.style.cursor = 'pointer';
         }
+    }
+
+    // Add client-side token estimation for live feedback
+    estimateTokens(text) {
+        if (!text || text.trim().length === 0) return 0;
+        
+        const words = text.split(/\s+/).filter(word => word.length > 0);
+        const wordCount = words.length;
+        const charCount = text.length;
+        
+        // Match backend estimation logic
+        let estimatedTokens = Math.floor(wordCount * 2.2);
+        
+        // Special characters
+        const specialChars = (text.match(/[^\w\s]/g) || []).length;
+        estimatedTokens += Math.floor(specialChars / 2);
+        
+        // Long words
+        const longWords = words.filter(word => word.length > 6).length;
+        estimatedTokens += longWords;
+        
+        // Long text penalty
+        if (charCount > 1000) {
+            estimatedTokens += Math.floor(charCount / 40);
+        }
+        
+        return Math.max(1, estimatedTokens);
     }
 
     async sendMessage() {
@@ -701,7 +736,14 @@ class Chatbot {
                 if (data.conversation_stats) {
                     console.log('Received conversation stats:', data.conversation_stats);
                     this.conversationStats = data.conversation_stats;
-                    this.updateConversationStatsUI();
+                    
+                    // Immediate UI update with animation
+                    this.updateConversationStatsUI(true);
+                    
+                    // Force refresh stats after a short delay to ensure accuracy
+                    setTimeout(() => {
+                        this.refreshConversationStats();
+                    }, 500);
                 } else {
                     console.warn('No conversation stats received from server');
                 }
@@ -2342,7 +2384,7 @@ class Chatbot {
         if (typingIndicator) typingIndicator.remove();
     }
 
-    updateConversationStatsUI() {
+    updateConversationStatsUI(animate = false) {
         console.log('updateConversationStatsUI called with stats:', this.conversationStats);
         
         if (!this.conversationStats) {
@@ -2409,10 +2451,10 @@ class Chatbot {
                                 stroke="${utilizationColor}" 
                                 stroke-width="2" 
                                 stroke-linecap="round"
-                                style="stroke-dasharray: ${2 * Math.PI * 8}; stroke-dashoffset: ${2 * Math.PI * 8 * (1 - utilization_percent / 100)}; transform: rotate(-90deg); transform-origin: center;"/>
+                                style="stroke-dasharray: ${2 * Math.PI * 8}; stroke-dashoffset: ${2 * Math.PI * 8 * (1 - utilization_percent / 100)}; transform: rotate(-90deg); transform-origin: center;${animate ? ' transition: stroke-dashoffset 0.8s ease-in-out;' : ''}"/>
                     </svg>
                 </div>
-                <span class="loader-percentage" style="color: ${utilizationColor};">${utilization_percent}%</span>
+                <span class="loader-percentage" style="color: ${utilizationColor};${animate ? ' transition: color 0.3s ease;' : ''}">${utilization_percent}%</span>
             </div>
         `;
         
@@ -2443,6 +2485,15 @@ class Chatbot {
             statsElement.style.borderColor = 'rgba(76, 175, 80, 0.2)';
             statsElement.style.background = 'rgba(76, 175, 80, 0.05)';
         });
+    }
+
+    // Force refresh conversation stats from server
+    async refreshConversationStats() {
+        const stats = await this.getConversationStats();
+        if (stats) {
+            console.log('Refreshed stats from server:', stats);
+            this.updateConversationStatsUI(true);
+        }
     }
 
     updateStatus(text, color) {
