@@ -1,36 +1,34 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 """
-Simple Flask server to handle NVIDIA API calls securely
+Flask server for NVIDIA/OpenRouter AI chatbot with secure log export
 """
 
 import os
-from flask import Flask, request, jsonify
+import tempfile
+import json
+from datetime import datetime
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import requests
-import json
 from conversation_memory import get_memory_manager, cleanup_old_sessions
 
 app = Flask(__name__)
 
-# Configure CORS to allow requests from GitHub Pages
+# Configure CORS
 CORS(app, origins=[
     "https://antonjijo.github.io",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     "http://localhost:3000",
-    "https://Nvidia.pythonanywhere.com"  # Add PythonAnywhere domain for cross-origin requests
+    "https://Nvidia.pythonanywhere.com"
 ])
 
-# API configuration - Get from environment variables
-NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+# API keys from environment
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
-
-# OpenRouter API configuration
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+EXPORT_KEY = os.getenv('EXPORT_KEY')
 
-# Define allowed models set
+# Allowed AI models
 ALLOWED_MODELS = {
     'meta/llama-4-maverick-17b-128e-instruct',
     'deepseek-ai/deepseek-r1',
@@ -43,164 +41,184 @@ ALLOWED_MODELS = {
     'x-ai/grok-4-fast:free',
 }
 
-# Validate API keys on startup
 if not NVIDIA_API_KEY:
-    print("WARNING: NVIDIA_API_KEY environment variable not set!")
+    print("WARNING: NVIDIA_API_KEY not set!")
 if not OPENROUTER_API_KEY:
-    print("WARNING: OPENROUTER_API_KEY environment variable not set!")
+    print("WARNING: OPENROUTER_API_KEY not set!")
+if not EXPORT_KEY:
+    print("WARNING: EXPORT_KEY not set!")
+
+# ---------------------
+# Helper functions
+# ---------------------
+
+def verify_api_key(req):
+    key = req.headers.get('X-API-KEY') or req.args.get('key')
+    return key == EXPORT_KEY
+
+def log_session_details(session_id, user_message, selected_model, conversation_messages, api_response=None, error=None):
+    """Append session info to chat_logs.jsonl"""
+    log_entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "session_id": session_id,
+        "model": selected_model,
+        "user_prompt": user_message,
+        "conversation_context": [
+            {
+                "role": msg["role"],
+                "content_preview": msg["content"][:100] + "..." if len(msg["content"]) > 100 else msg["content"],
+                "content_length": len(msg["content"]),
+                "is_summary": msg.get("metadata", {}).get("is_summary", False) if "metadata" in msg else False
+            }
+            for msg in conversation_messages
+        ]
+    }
+
+    if api_response:
+        ai_content = api_response.get('choices', [{}])[0].get('message', {}).get('content', '')
+        log_entry["ai_response"] = {"content": ai_content[:200] + "...", "status": "success"}
+        log_entry["ai_response_text"] = ai_content
+    elif error:
+        log_entry["ai_response"] = {"error": str(error), "status": "error"}
+        log_entry["ai_response_text"] = f"Error: {str(error)}"
+
+    # Save to file
+    try:
+        with open("chat_logs.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    except Exception as e:
+        print(f"ERROR: Failed to write log: {e}")
+
+# ---------------------
+# Chat endpoint
+# ---------------------
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
+    session_id = 'default'
+    user_message = ''
+    selected_model = 'meta/llama-4-maverick-17b-128e-instruct'
+    conversation_messages = []
+
     try:
-        # Check if API keys are available
         if not NVIDIA_API_KEY and not OPENROUTER_API_KEY:
-            return jsonify({'error': 'API keys not configured. Please set environment variables.'}), 500
-        
-        data = request.get_json()
+            return jsonify({'error': 'API keys not configured'}), 500
+
+        data = request.get_json() or {}
         user_message = data.get('message', '')
-        session_id = data.get('session_id', 'default')  # Get session ID for conversation persistence
-        
-        if not user_message:
-            return jsonify({'error': 'No message provided'}), 400
-        
-        # Get model from request
-        selected_model = data.get('model', 'meta/llama-4-maverick-17b-128e-instruct')
+        session_id = data.get('session_id', 'default')
+        selected_model = data.get('model', selected_model)
+
         if selected_model not in ALLOWED_MODELS:
             return jsonify({'error': 'Unsupported model', 'allowed': sorted(list(ALLOWED_MODELS))}), 400
-        
-        # Get conversation memory manager for this session
+        if not user_message:
+            return jsonify({'error': 'No message provided'}), 400
+
         memory_manager = get_memory_manager(session_id)
         memory_manager.set_model(selected_model)
-        
-        # Add user message to conversation history
         memory_manager.add_message('user', user_message)
-        
-        # Get conversation buffer for API call
         conversation_messages = memory_manager.get_conversation_buffer()
 
-        # Determine API provider and prepare request
+        # Select API
         if selected_model in ['qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free', 'x-ai/grok-4-fast:free']:
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:8000",
-                "X-Title": "NVIDIA Chatbot"
-            }
-            payload = {
-                "model": selected_model,
-                "messages": conversation_messages,
-                "max_tokens": 1024,
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "frequency_penalty": 0.0,
-                "presence_penalty": 0.0,
-                "stream": False
-            }
-            response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload)
+            headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+            payload = {"model": selected_model, "messages": conversation_messages, "max_tokens":1024}
+            response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
         else:
-            headers = {
-                "Authorization": f"Bearer {NVIDIA_API_KEY}",
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": selected_model,
-                "messages": conversation_messages,
-                "max_tokens": 1024,
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "frequency_penalty": 0.0,
-                "presence_penalty": 0.0,
-                "stream": False
-            }
-            response = requests.post(NVIDIA_API_URL, headers=headers, json=payload)
-        
+            headers = {"Authorization": f"Bearer {NVIDIA_API_KEY}", "Content-Type": "application/json"}
+            payload = {"model": selected_model, "messages": conversation_messages, "max_tokens":1024}
+            response = requests.post("https://integrate.api.nvidia.com/v1/chat/completions", headers=headers, json=payload)
+
         if response.status_code == 200:
-            try:
-                api_response = response.json()
-                bot_message = api_response['choices'][0]['message']['content']
-                
-                # Validate bot_message is not None or empty
-                if not bot_message:
-                    print(f"WARNING: API returned empty/null content: {api_response}")
-                    bot_message = "I apologize, but I received an empty response. Please try again."
-                
-                # Add assistant response to conversation memory
-                memory_manager.add_message('assistant', bot_message)
-                
-                # Debug: Print the actual response from API
-                print(f"API Response: {bot_message[:200] if bot_message else 'EMPTY'}...")
-                
-                # Check if the response is the welcome message (this should not happen)
-                if bot_message and "Hello! I'm your NVIDIA-powered chatbot with advanced capabilities" in bot_message:
-                    return jsonify({'error': 'NVIDIA API returned unexpected response. Please check API configuration.'}), 500
-                
-                reasoning_content = api_response['choices'][0]['message'].get('reasoning_content', None)
-                response_data = {
-                    'response': bot_message,
-                    'model': selected_model,
-                    'conversation_stats': memory_manager.get_conversation_stats()
-                }
-                if reasoning_content and selected_model == 'deepseek-ai/deepseek-r1':
-                    response_data['reasoning'] = reasoning_content
-                
-                # Cleanup old sessions periodically (less aggressive)
-                cleanup_old_sessions(max_sessions=500)  # Increased from 100
-                
-                return jsonify(response_data)
-            except (KeyError, IndexError, TypeError) as e:
-                print(f"ERROR: Failed to parse API response: {e}")
-                try:
-                    print(f"Raw API Response: {response.text[:500]}")
-                except:
-                    print("Could not print raw API response")
-                return jsonify({'error': 'Invalid API response format'}), 500
+            api_response = response.json()
+            bot_message = api_response['choices'][0]['message']['content'] or "Empty response"
+            memory_manager.add_message('assistant', bot_message)
+            log_session_details(session_id, user_message, selected_model, conversation_messages, api_response=api_response)
+            cleanup_old_sessions(max_sessions=500)
+            return jsonify({'response': bot_message, 'model': selected_model, 'conversation_stats': memory_manager.get_conversation_stats()})
         else:
-            print(f"API Error: Status {response.status_code}, Response: {response.text[:500]}")
-            return jsonify({'error': f"API error {response.status_code}: {response.text}"}), 500
-            
+            error_msg = f"API error {response.status_code}: {response.text}"
+            log_session_details(session_id, user_message, selected_model, conversation_messages, error=error_msg)
+            return jsonify({'error': error_msg}), 500
+
     except Exception as e:
-        print(f"ERROR: Unhandled exception in chat endpoint: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': "Internal server error"}), 500
+        log_session_details(session_id, user_message, selected_model, conversation_messages, error=str(e))
+        return jsonify({'error': str(e)}), 500
+
+# ---------------------
+# Health endpoint
+# ---------------------
 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy'})
 
-@app.route('/api/conversation/stats', methods=['GET'])
-def get_conversation_stats():
-    """Get conversation statistics for a session."""
-    session_id = request.args.get('session_id', 'default')
-    memory_manager = get_memory_manager(session_id)
-    return jsonify(memory_manager.get_conversation_stats())
+# ---------------------
+# Export logs endpoint
+# ---------------------
 
-@app.route('/api/conversation/clear', methods=['POST'])
-def clear_conversation():
-    """Clear conversation history for a session."""
-    data = request.get_json() or {}
-    session_id = data.get('session_id', 'default')
-    keep_system_prompt = data.get('keep_system_prompt', True)
-    
-    memory_manager = get_memory_manager(session_id)
-    memory_manager.clear_conversation(keep_system_prompt)
-    
-    return jsonify({
-        'success': True,
-        'message': 'Conversation cleared',
-        'stats': memory_manager.get_conversation_stats()
-    })
+@app.route('/export_logs', methods=['GET'])
+def export_logs():
+    if not verify_api_key(request):
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not os.path.exists("chat_logs.jsonl"):
+        return jsonify({'error': 'No logs found'}), 404
 
-@app.route('/api/conversation/export', methods=['GET'])
-def export_conversation():
-    """Export conversation data for debugging/persistence."""
-    session_id = request.args.get('session_id', 'default')
-    memory_manager = get_memory_manager(session_id)
-    return jsonify(memory_manager.export_conversation())
+    try:
+        formatted_logs = []
+        with open("chat_logs.jsonl", "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip(): continue
+                log_entry = json.loads(line)
+                session_id = log_entry.get("session_id", "unknown")
+                user_prompt = log_entry.get("user_prompt", "")
+                ai_response = log_entry.get("ai_response_text", "")
+                formatted_logs.append(f"Session: {session_id}")
+                if user_prompt: formatted_logs.append(f"User: {user_prompt}")
+                if ai_response:
+                    if isinstance(ai_response, dict):
+                        ai_response = ai_response.get("error", str(ai_response))
+                    formatted_logs.append(f"AI: {ai_response}")
+                formatted_logs.append("")
+
+        with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".txt") as temp_file:
+            temp_file.write("\n".join(formatted_logs))
+            temp_name = temp_file.name
+
+        response = send_file(
+            temp_name,
+            as_attachment=True,
+            download_name=f"chat_report_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.txt",
+            mimetype='text/plain'
+        )
+
+        os.remove(temp_name)
+        return response
+
+    except Exception as e:
+        print(f"ERROR: Failed to export logs: {e}")
+        return jsonify({'error': 'Failed to export logs'}), 500
+
+# ---------------------
+# Cleanup logs endpoint
+# ---------------------
+
+@app.route('/cleanup_logs', methods=['POST'])
+def cleanup_logs():
+    if not verify_api_key(request):
+        return jsonify({'error': 'Unauthorized'}), 401
+    try:
+        open("chat_logs.jsonl", "w").close()
+        return jsonify({"status": "cleared"})
+    except Exception as e:
+        print(f"ERROR: Failed to cleanup logs: {e}")
+        return jsonify({'error': 'Failed to cleanup logs'}), 500
+
+# ---------------------
+# Run server
+# ---------------------
 
 if __name__ == '__main__':
-    print("Starting NVIDIA Chatbot Server...")
-    port = int(os.getenv('PORT', 5000))  # Use PORT from environment or default to 5000
-    print(f"Backend API: http://0.0.0.0:{port}")
-    app.run(host='0.0.0.0', port=port, debug=False)  # Disable debug in production
+    port = int(os.getenv('PORT', 5000))
+    print(f"Starting NVIDIA Chatbot Server on port {port}...")
+    app.run(host='0.0.0.0', port=port, debug=False)
