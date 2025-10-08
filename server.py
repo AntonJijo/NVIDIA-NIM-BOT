@@ -163,7 +163,7 @@ def chat():
         print(f"ERROR: Unhandled exception in chat endpoint: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': f"Internal server error: {str(e)}"}), 500
+        return jsonify({'error': "Internal server error"}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
