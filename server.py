@@ -6,6 +6,8 @@ Flask server for NVIDIA/OpenRouter AI chatbot with secure log export
 import os
 import tempfile
 import json
+import re
+import html
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -14,14 +16,19 @@ from conversation_memory import get_memory_manager, cleanup_old_sessions
 
 app = Flask(__name__)
 
-# Configure CORS
-CORS(app, origins=[
-    "https://antonjijo.github.io",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "http://localhost:3000",
-    "https://Nvidia.pythonanywhere.com"
-])
+# Configure CORS with more restrictive settings
+CORS(app, 
+     origins=[
+         "https://antonjijo.github.io",
+         "http://localhost:8000",
+         "http://127.0.0.1:8000",
+         "http://localhost:3000",
+         "https://Nvidia.pythonanywhere.com"
+     ],
+     methods=["GET", "POST"],
+     allow_headers=["Content-Type", "X-API-KEY"],
+     supports_credentials=False
+)
 
 # API keys from environment
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
@@ -49,12 +56,125 @@ if not EXPORT_KEY:
     print("WARNING: EXPORT_KEY not set!")
 
 # ---------------------
-# Helper functions
+# Security and validation functions
 # ---------------------
 
 def verify_api_key(req):
     key = req.headers.get('X-API-KEY') or req.args.get('key')
     return key == EXPORT_KEY
+
+def validate_session_id(session_id):
+    """Validate session ID format and content"""
+    if not session_id or not isinstance(session_id, str):
+        return False
+    # Session ID should be alphanumeric with underscores and hyphens only
+    if not re.match(r'^[a-zA-Z0-9_-]+$', session_id):
+        return False
+    # Length should be reasonable (not too short or too long)
+    if len(session_id) < 5 or len(session_id) > 100:
+        return False
+    return True
+
+def sanitize_input(text):
+    """Sanitize user input to prevent XSS and injection attacks"""
+    if not text or not isinstance(text, str):
+        return ""
+    
+    # Remove null bytes and control characters
+    text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+    
+    # HTML escape to prevent XSS
+    text = html.escape(text, quote=True)
+    
+    # Remove potential script tags and dangerous patterns
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'vbscript:', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'on\w+\s*=', '', text, flags=re.IGNORECASE)
+    
+    return text.strip()
+
+def validate_message_content(message):
+    """Validate message content for security and length"""
+    if not message or not isinstance(message, str):
+        return False, "Invalid message format"
+    
+    # Check length limits
+    if len(message) > 10000:  # 10KB limit
+        return False, "Message too long (max 10,000 characters)"
+    
+    if len(message.strip()) == 0:
+        return False, "Message cannot be empty"
+    
+    # Check for suspicious patterns
+    suspicious_patterns = [
+        r'<script[^>]*>',
+        r'javascript:',
+        r'vbscript:',
+        r'data:text/html',
+        r'<iframe[^>]*>',
+        r'<object[^>]*>',
+        r'<embed[^>]*>',
+        r'<link[^>]*>',
+        r'<meta[^>]*>',
+        r'<style[^>]*>'
+    ]
+    
+    for pattern in suspicious_patterns:
+        if re.search(pattern, message, re.IGNORECASE):
+            return False, "Message contains potentially dangerous content"
+    
+    return True, "Valid"
+
+# Simple rate limiting using in-memory storage
+from collections import defaultdict, deque
+import time
+
+rate_limit_storage = defaultdict(deque)
+
+def check_rate_limit(ip_address, max_requests=10, window_seconds=60):
+    """Simple rate limiting based on IP address"""
+    now = time.time()
+    requests = rate_limit_storage[ip_address]
+    
+    # Remove old requests outside the window
+    while requests and requests[0] <= now - window_seconds:
+        requests.popleft()
+    
+    # Check if limit exceeded
+    if len(requests) >= max_requests:
+        return False
+    
+    # Add current request
+    requests.append(now)
+    return True
+
+def validate_request_origin():
+    """Validate that the request comes from an allowed origin"""
+    origin = request.headers.get('Origin')
+    referer = request.headers.get('Referer')
+    
+    allowed_origins = [
+        "https://antonjijo.github.io",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "https://Nvidia.pythonanywhere.com"
+    ]
+    
+    # Check origin header
+    if origin and origin not in allowed_origins:
+        return False
+    
+    # Check referer header as fallback
+    if not origin and referer:
+        for allowed in allowed_origins:
+            if referer.startswith(allowed):
+                return True
+        return False
+    
+    # Allow requests without origin/referer (e.g., direct API calls)
+    return True
 
 def log_session_details(session_id, user_message, selected_model, conversation_messages, api_response=None, error=None):
     """Append session info to chat_logs.jsonl"""
@@ -101,6 +221,15 @@ def chat():
     conversation_messages = []
 
     try:
+        # Origin validation
+        if not validate_request_origin():
+            return jsonify({'error': 'Request origin not allowed'}), 403
+
+        # Rate limiting check
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+        if not check_rate_limit(client_ip):
+            return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
+
         if not NVIDIA_API_KEY and not OPENROUTER_API_KEY:
             return jsonify({'error': 'API keys not configured'}), 500
 
@@ -109,10 +238,20 @@ def chat():
         session_id = data.get('session_id', 'default')
         selected_model = data.get('model', selected_model)
 
+        # Validate session ID
+        if not validate_session_id(session_id):
+            return jsonify({'error': 'Invalid session ID format'}), 400
+
+        # Validate and sanitize user message
+        is_valid, error_msg = validate_message_content(user_message)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
+        # Sanitize the message
+        user_message = sanitize_input(user_message)
+
         if selected_model not in ALLOWED_MODELS:
             return jsonify({'error': 'Unsupported model', 'allowed': sorted(list(ALLOWED_MODELS))}), 400
-        if not user_message:
-            return jsonify({'error': 'No message provided'}), 400
 
         memory_manager = get_memory_manager(session_id)
         memory_manager.set_model(selected_model)
@@ -132,12 +271,23 @@ def chat():
         if response.status_code == 200:
             api_response = response.json()
             bot_message = api_response['choices'][0]['message']['content'] or "Empty response"
+            # Sanitize bot response as well
+            bot_message = sanitize_input(bot_message)
             memory_manager.add_message('assistant', bot_message)
             log_session_details(session_id, user_message, selected_model, conversation_messages, api_response=api_response)
             cleanup_old_sessions(max_sessions=500)
             return jsonify({'response': bot_message, 'model': selected_model, 'conversation_stats': memory_manager.get_conversation_stats()})
         else:
-            error_msg = f"API error {response.status_code}: {response.text}"
+            # Don't expose internal API details in error messages
+            if response.status_code == 401:
+                error_msg = "Authentication failed with AI service"
+            elif response.status_code == 429:
+                error_msg = "AI service rate limit exceeded. Please try again later."
+            elif response.status_code >= 500:
+                error_msg = "AI service temporarily unavailable. Please try again later."
+            else:
+                error_msg = f"AI service error (code: {response.status_code})"
+            
             log_session_details(session_id, user_message, selected_model, conversation_messages, error=error_msg)
             return jsonify({'error': error_msg}), 500
 

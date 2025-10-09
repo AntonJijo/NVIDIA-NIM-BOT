@@ -1,12 +1,32 @@
 class Chatbot {
     // Escape HTML meta-characters from a string
     escapeHTML(str) {
+        if (typeof str !== 'string') return '';
         return String(str)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+    }
+
+    // Safe DOM manipulation to prevent XSS
+    safeSetHTML(element, content) {
+        if (!element || typeof content !== 'string') return;
+        
+        // Clear existing content safely
+        while (element.firstChild) {
+            element.removeChild(element.firstChild);
+        }
+        
+        // Create a temporary container to parse HTML safely
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = content;
+        
+        // Move all child nodes safely
+        while (tempDiv.firstChild) {
+            element.appendChild(tempDiv.firstChild);
+        }
     }
 
     constructor() {
@@ -36,13 +56,13 @@ class Chatbot {
         // Check for existing session in localStorage first
         const existingSessionId = localStorage.getItem('chatbot_session_id');
         
-        if (existingSessionId) {
+        if (existingSessionId && this._validateSessionId(existingSessionId)) {
             console.log('Resuming existing session:', existingSessionId);
             return existingSessionId;
         }
         
         // Generate a unique session ID for conversation persistence
-        const newSessionId = 'session_' + Date.now() + '_' + this._secureRandomString(9);
+        const newSessionId = 'session_' + Date.now() + '_' + this._secureRandomString(16);
         
         // Store the new session ID in localStorage
         localStorage.setItem('chatbot_session_id', newSessionId);
@@ -50,10 +70,21 @@ class Chatbot {
         
         return newSessionId;
     }
+
+    _validateSessionId(sessionId) {
+        // Validate session ID format
+        if (!sessionId || typeof sessionId !== 'string') {
+            return false;
+        }
+        
+        // Check format: session_timestamp_randomstring
+        const sessionPattern = /^session_\d+_[a-f0-9]{16}$/;
+        return sessionPattern.test(sessionId);
+    }
     
     createNewSession() {
         // Force create a new session and store it
-        const newSessionId = 'session_' + Date.now() + '_' + this._secureRandomString(9);
+        const newSessionId = 'session_' + Date.now() + '_' + this._secureRandomString(16);
         localStorage.setItem('chatbot_session_id', newSessionId);
         this.sessionId = newSessionId;
         
@@ -123,7 +154,10 @@ class Chatbot {
                     if (response.ok) {
                         // Clear the UI messages as well
                         this.messages = [];
-                        this.chatMessages.innerHTML = '';
+                        // Clear messages safely
+                        while (this.chatMessages.firstChild) {
+                            this.chatMessages.removeChild(this.chatMessages.firstChild);
+                        }
                         
                         // Add welcome message back
                         this.addWelcomeMessage();
@@ -149,24 +183,57 @@ class Chatbot {
     addWelcomeMessage() {
         const welcomeDiv = document.createElement('div');
         welcomeDiv.className = 'message bot-message';
-        welcomeDiv.innerHTML = `
-            <div class="message-avatar">
-                <img src="Main_Logo.svg" alt="NVIDIA" class="nvidia-logo" />
-            </div>
-            <div class="message-content">
-                <p>Hello! I'm your NVIDIA-powered chatbot with advanced capabilities:</p>
-                <p><strong>Multiple AI Models available:</strong></p>
-                <p><strong>Meta:</strong> Llama 4 Maverick 17B</p>
-                <p><strong>DeepSeek:</strong> R1</p>
-                <p><strong>Qwen:</strong> Qwen2.5 Coder 32B</p>
-                <p><strong>Qwen:</strong> Qwen3 Coder 480B</p>
-                <p><strong>DeepSeek:</strong> V3.1</p>
-                <p><strong>OpenAI:</strong> GPT-OSS 120B</p>
-                <p><strong>Qwen:</strong> Qwen3 235B A22B</p>
-                <p><strong>Google:</strong> Gemma 3 27B IT</p>
-                <p><strong>Select</strong> your preferred model above and start chatting!</p>
-            </div>
-        `;
+        // Create welcome message content safely
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = 'message-avatar';
+        const logoImg = document.createElement('img');
+        logoImg.src = 'Main_Logo.svg';
+        logoImg.alt = 'NVIDIA';
+        logoImg.className = 'nvidia-logo';
+        avatarDiv.appendChild(logoImg);
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        
+        const messages = [
+            "Hello! I'm your NVIDIA-powered chatbot with advanced capabilities:",
+            "Multiple AI Models available:",
+            "Meta: Llama 4 Maverick 17B",
+            "DeepSeek: R1",
+            "Qwen: Qwen2.5 Coder 32B",
+            "Qwen: Qwen3 Coder 480B",
+            "DeepSeek: V3.1",
+            "OpenAI: GPT-OSS 120B",
+            "Qwen: Qwen3 235B A22B",
+            "Google: Gemma 3 27B IT",
+            "Select your preferred model above and start chatting!"
+        ];
+        
+        messages.forEach((text, index) => {
+            const p = document.createElement('p');
+            if (index === 1) {
+                const strong = document.createElement('strong');
+                strong.textContent = text;
+                p.appendChild(strong);
+            } else if (index > 1 && index < 10) {
+                const parts = text.split(':');
+                const strong = document.createElement('strong');
+                strong.textContent = parts[0] + ':';
+                p.appendChild(strong);
+                p.appendChild(document.createTextNode(' ' + parts[1]));
+            } else if (index === 10) {
+                const strong = document.createElement('strong');
+                strong.textContent = 'Select';
+                p.appendChild(strong);
+                p.appendChild(document.createTextNode(' your preferred model above and start chatting!'));
+            } else {
+                p.textContent = text;
+            }
+            contentDiv.appendChild(p);
+        });
+        
+        welcomeDiv.appendChild(avatarDiv);
+        welcomeDiv.appendChild(contentDiv);
         this.chatMessages.appendChild(welcomeDiv);
         this.attachCopyListeners(welcomeDiv.querySelector('.message-content'));
     }
@@ -252,65 +319,136 @@ class Chatbot {
         // Create modal overlay
         const modalOverlay = document.createElement('div');
         modalOverlay.className = 'modal-overlay';
-        modalOverlay.innerHTML = `
-            <div class="confirmation-modal">
-                <div class="modal-header">
-                    <h3>Change Model & Start New Session?</h3>
-                    <button class="modal-close" aria-label="Close">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="modal-content">
-                    <div class="model-change-info">
-                        <div class="current-session-stats">
-                            <h4>Current Session</h4>
-                            <div class="stats-grid">
-                                <div class="stat-item">
-                                    <span class="stat-label">Model:</span>
-                                    <span class="stat-value">${this.escapeHTML(this.getModelDisplayName(currentModel))}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span class="stat-label">Messages:</span>
-                                    <span class="stat-value">${stats.total_messages}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span class="stat-label">Tokens:</span>
-                                    <span class="stat-value">${stats.total_tokens.toLocaleString()}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span class="stat-label">Utilization:</span>
-                                    <span class="stat-value">${stats.utilization_percent}%</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="arrow-divider">
-                            <i class="fas fa-arrow-down"></i>
-                        </div>
-                        <div class="new-session-info">
-                            <h4>New Session</h4>
-                            <div class="new-model-display">
-                                <span class="new-model-name">${this.escapeHTML(this.getModelDisplayName(newModel))}</span>
-                                <span class="fresh-start">Fresh conversation start</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="warning-notice">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        <span>Changing models will start a new session. Your current conversation will be cleared.</span>
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button class="cancel-btn" data-action="cancel">
-                        <i class="fas fa-times"></i>
-                        Keep Current Session
-                    </button>
-                    <button class="confirm-btn" data-action="confirm">
-                        <i class="fas fa-check"></i>
-                        Change Model & Start New
-                    </button>
-                </div>
-            </div>
-        `;
+        // Create modal content safely
+        const modal = document.createElement('div');
+        modal.className = 'confirmation-modal';
+        
+        // Header
+        const header = document.createElement('div');
+        header.className = 'modal-header';
+        const h3 = document.createElement('h3');
+        h3.textContent = 'Change Model & Start New Session?';
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'modal-close';
+        closeBtn.setAttribute('aria-label', 'Close');
+        const closeIcon = document.createElement('i');
+        closeIcon.className = 'fas fa-times';
+        closeBtn.appendChild(closeIcon);
+        header.appendChild(h3);
+        header.appendChild(closeBtn);
+        
+        // Content
+        const content = document.createElement('div');
+        content.className = 'modal-content';
+        
+        const modelChangeInfo = document.createElement('div');
+        modelChangeInfo.className = 'model-change-info';
+        
+        // Current session stats
+        const currentStats = document.createElement('div');
+        currentStats.className = 'current-session-stats';
+        const currentH4 = document.createElement('h4');
+        currentH4.textContent = 'Current Session';
+        currentStats.appendChild(currentH4);
+        
+        const statsGrid = document.createElement('div');
+        statsGrid.className = 'stats-grid';
+        
+        const statData = [
+            ['Model:', this.escapeHTML(this.getModelDisplayName(currentModel))],
+            ['Messages:', stats.total_messages.toString()],
+            ['Tokens:', stats.total_tokens.toLocaleString()],
+            ['Utilization:', stats.utilization_percent + '%']
+        ];
+        
+        statData.forEach(([label, value]) => {
+            const statItem = document.createElement('div');
+            statItem.className = 'stat-item';
+            
+            const statLabel = document.createElement('span');
+            statLabel.className = 'stat-label';
+            statLabel.textContent = label;
+            
+            const statValue = document.createElement('span');
+            statValue.className = 'stat-value';
+            statValue.textContent = value;
+            
+            statItem.appendChild(statLabel);
+            statItem.appendChild(statValue);
+            statsGrid.appendChild(statItem);
+        });
+        
+        currentStats.appendChild(statsGrid);
+        modelChangeInfo.appendChild(currentStats);
+        
+        // Arrow divider
+        const arrowDiv = document.createElement('div');
+        arrowDiv.className = 'arrow-divider';
+        const arrowIcon = document.createElement('i');
+        arrowIcon.className = 'fas fa-arrow-down';
+        arrowDiv.appendChild(arrowIcon);
+        modelChangeInfo.appendChild(arrowDiv);
+        
+        // New session info
+        const newSessionInfo = document.createElement('div');
+        newSessionInfo.className = 'new-session-info';
+        const newH4 = document.createElement('h4');
+        newH4.textContent = 'New Session';
+        newSessionInfo.appendChild(newH4);
+        
+        const newModelDisplay = document.createElement('div');
+        newModelDisplay.className = 'new-model-display';
+        const newModelName = document.createElement('span');
+        newModelName.className = 'new-model-name';
+        newModelName.textContent = this.escapeHTML(this.getModelDisplayName(newModel));
+        const freshStart = document.createElement('span');
+        freshStart.className = 'fresh-start';
+        freshStart.textContent = 'Fresh conversation start';
+        newModelDisplay.appendChild(newModelName);
+        newModelDisplay.appendChild(freshStart);
+        newSessionInfo.appendChild(newModelDisplay);
+        modelChangeInfo.appendChild(newSessionInfo);
+        
+        content.appendChild(modelChangeInfo);
+        
+        // Warning notice
+        const warning = document.createElement('div');
+        warning.className = 'warning-notice';
+        const warningIcon = document.createElement('i');
+        warningIcon.className = 'fas fa-exclamation-triangle';
+        const warningText = document.createElement('span');
+        warningText.textContent = 'Changing models will start a new session. Your current conversation will be cleared.';
+        warning.appendChild(warningIcon);
+        warning.appendChild(warningText);
+        content.appendChild(warning);
+        
+        // Actions
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'cancel-btn';
+        cancelBtn.setAttribute('data-action', 'cancel');
+        const cancelIcon = document.createElement('i');
+        cancelIcon.className = 'fas fa-times';
+        cancelBtn.appendChild(cancelIcon);
+        cancelBtn.appendChild(document.createTextNode(' Keep Current Session'));
+        
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'confirm-btn';
+        confirmBtn.setAttribute('data-action', 'confirm');
+        const confirmIcon = document.createElement('i');
+        confirmIcon.className = 'fas fa-check';
+        confirmBtn.appendChild(confirmIcon);
+        confirmBtn.appendChild(document.createTextNode(' Change Model & Start New'));
+        
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        
+        modal.appendChild(header);
+        modal.appendChild(content);
+        modal.appendChild(actions);
+        modalOverlay.appendChild(modal);
         
         document.body.appendChild(modalOverlay);
         
@@ -401,11 +539,15 @@ class Chatbot {
             // Create session controls container
             const sessionControls = document.createElement('div');
             sessionControls.className = 'navbar-item session-controls';
-            sessionControls.innerHTML = `
-                <button id="newSessionBtn" class="session-btn" title="Start New Session">
-                    <i class="fas fa-plus"></i>
-                </button>
-            `;
+            // Create session controls safely
+            const newSessionBtn = document.createElement('button');
+            newSessionBtn.id = 'newSessionBtn';
+            newSessionBtn.className = 'session-btn';
+            newSessionBtn.title = 'Start New Session';
+            const plusIcon = document.createElement('i');
+            plusIcon.className = 'fas fa-plus';
+            newSessionBtn.appendChild(plusIcon);
+            sessionControls.appendChild(newSessionBtn);
             
             // Insert before the status indicator
             const statusContainer = navbar.querySelector('.status-container');
@@ -437,90 +579,151 @@ class Chatbot {
         // Create modal overlay
         const modalOverlay = document.createElement('div');
         modalOverlay.className = 'modal-overlay';
-        modalOverlay.innerHTML = `
-            <div class="confirmation-modal">
-                <div class="modal-header">
-                    <h3>Start New Conversation Session</h3>
-                    <button class="modal-close" aria-label="Close">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="modal-content">
-                    <div class="new-session-config">
-                        <div class="model-selection-section">
-                            <h4>Select AI Model</h4>
-                            <div class="model-grid">
-                                <div class="model-option" data-model="meta/llama-4-maverick-17b-128e-instruct">
-                                    <div class="model-name">Llama 4 Maverick 17B</div>
-                                    <div class="model-description">Latest Meta model with enhanced reasoning</div>
-                                </div>
-                                <div class="model-option" data-model="deepseek-ai/deepseek-r1">
-                                    <div class="model-name">DeepSeek R1</div>
-                                    <div class="model-description">Advanced reasoning and problem-solving</div>
-                                </div>
-                                <div class="model-option" data-model="qwen/qwen2.5-coder-32b-instruct">
-                                    <div class="model-name">Qwen2.5 Coder 32B</div>
-                                    <div class="model-description">Specialized for coding tasks</div>
-                                </div>
-                                <div class="model-option" data-model="qwen/qwen3-coder-480b-a35b-instruct">
-                                    <div class="model-name">Qwen3 Coder 480B</div>
-                                    <div class="model-description">Advanced coding and development</div>
-                                </div>
-                                <div class="model-option" data-model="deepseek-ai/deepseek-v3.1">
-                                    <div class="model-name">DeepSeek V3.1</div>
-                                    <div class="model-description">General purpose AI assistant</div>
-                                </div>
-                                <div class="model-option" data-model="openai/gpt-oss-120b">
-                                    <div class="model-name">GPT-OSS 120B</div>
-                                    <div class="model-description">Open source GPT variant</div>
-                                </div>
-                                <div class="model-option" data-model="qwen/qwen3-235b-a22b:free">
-                                    <div class="model-name">Qwen3 235B A22B</div>
-                                    <div class="model-description">Free tier Qwen model</div>
-                                </div>
-                                <div class="model-option" data-model="google/gemma-3-27b-it:free">
-                                    <div class="model-name">Gemma 3 27B IT</div>
-                                    <div class="model-description">Google's instruction-tuned model</div>
-                                </div>
-                            </div>
-                        </div>
-                        ${currentStats && currentStats.total_tokens > 0 && currentStats.current_model ? `
-                        <div class="current-session-info">
-                            <h4>Current Session</h4>
-                            <div class="session-summary">
-                                <div class="summary-item">
-                                    <span class="summary-label">Model:</span>
-                                    <span class="summary-value">${this.escapeHTML(this.getModelDisplayName(currentStats.current_model || currentModel))}</span>
-                                </div>
-                                <div class="summary-item">
-                                    <span class="summary-label">Tokens Used:</span>
-                                    <span class="summary-value">${currentStats.total_tokens.toLocaleString()}</span>
-                                </div>
-                                <div class="summary-item">
-                                    <span class="summary-label">Utilization:</span>
-                                    <span class="summary-value">${currentStats.utilization_percent}%</span>
-                                </div>
-                            </div>
-                            <div class="warning-notice">
-                                <i class="fas fa-exclamation-triangle"></i>
-                                <span>Starting a new session will clear your current conversation.</span>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button class="cancel-btn" data-action="cancel">
-                        <i class="fas fa-times"></i>
-                        Cancel
-                    </button>
-                    <button class="confirm-btn" data-action="confirm">
-                        <i class="fas fa-plus"></i>
-                        Start New Session
-                    </button>
-                </div>
-            </div>
-        `;
+        // Create modal content safely
+        const modal = document.createElement('div');
+        modal.className = 'confirmation-modal';
+        
+        // Header
+        const header = document.createElement('div');
+        header.className = 'modal-header';
+        const h3 = document.createElement('h3');
+        h3.textContent = 'Start New Conversation Session';
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'modal-close';
+        closeBtn.setAttribute('aria-label', 'Close');
+        const closeIcon = document.createElement('i');
+        closeIcon.className = 'fas fa-times';
+        closeBtn.appendChild(closeIcon);
+        header.appendChild(h3);
+        header.appendChild(closeBtn);
+        
+        // Content
+        const content = document.createElement('div');
+        content.className = 'modal-content';
+        
+        const newSessionConfig = document.createElement('div');
+        newSessionConfig.className = 'new-session-config';
+        
+        // Model selection section
+        const modelSection = document.createElement('div');
+        modelSection.className = 'model-selection-section';
+        const modelH4 = document.createElement('h4');
+        modelH4.textContent = 'Select AI Model';
+        modelSection.appendChild(modelH4);
+        
+        const modelGrid = document.createElement('div');
+        modelGrid.className = 'model-grid';
+        
+        const models = [
+            { value: 'meta/llama-4-maverick-17b-128e-instruct', name: 'Llama 4 Maverick 17B', desc: 'Latest Meta model with enhanced reasoning' },
+            { value: 'deepseek-ai/deepseek-r1', name: 'DeepSeek R1', desc: 'Advanced reasoning and problem-solving' },
+            { value: 'qwen/qwen2.5-coder-32b-instruct', name: 'Qwen2.5 Coder 32B', desc: 'Specialized for coding tasks' },
+            { value: 'qwen/qwen3-coder-480b-a35b-instruct', name: 'Qwen3 Coder 480B', desc: 'Advanced coding and development' },
+            { value: 'deepseek-ai/deepseek-v3.1', name: 'DeepSeek V3.1', desc: 'General purpose AI assistant' },
+            { value: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B', desc: 'Open source GPT variant' },
+            { value: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B A22B', desc: 'Free tier Qwen model' },
+            { value: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B IT', desc: 'Google\'s instruction-tuned model' }
+        ];
+        
+        models.forEach(model => {
+            const option = document.createElement('div');
+            option.className = 'model-option';
+            option.setAttribute('data-model', model.value);
+            
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'model-name';
+            nameDiv.textContent = model.name;
+            
+            const descDiv = document.createElement('div');
+            descDiv.className = 'model-description';
+            descDiv.textContent = model.desc;
+            
+            option.appendChild(nameDiv);
+            option.appendChild(descDiv);
+            modelGrid.appendChild(option);
+        });
+        
+        modelSection.appendChild(modelGrid);
+        newSessionConfig.appendChild(modelSection);
+        
+        // Current session info (conditional)
+        if (currentStats && currentStats.total_tokens > 0 && currentStats.current_model) {
+            const currentInfo = document.createElement('div');
+            currentInfo.className = 'current-session-info';
+            const currentH4 = document.createElement('h4');
+            currentH4.textContent = 'Current Session';
+            currentInfo.appendChild(currentH4);
+            
+            const sessionSummary = document.createElement('div');
+            sessionSummary.className = 'session-summary';
+            
+            const summaryData = [
+                ['Model:', this.escapeHTML(this.getModelDisplayName(currentStats.current_model || currentModel))],
+                ['Tokens Used:', currentStats.total_tokens.toLocaleString()],
+                ['Utilization:', currentStats.utilization_percent + '%']
+            ];
+            
+            summaryData.forEach(([label, value]) => {
+                const item = document.createElement('div');
+                item.className = 'summary-item';
+                
+                const labelSpan = document.createElement('span');
+                labelSpan.className = 'summary-label';
+                labelSpan.textContent = label;
+                
+                const valueSpan = document.createElement('span');
+                valueSpan.className = 'summary-value';
+                valueSpan.textContent = value;
+                
+                item.appendChild(labelSpan);
+                item.appendChild(valueSpan);
+                sessionSummary.appendChild(item);
+            });
+            
+            currentInfo.appendChild(sessionSummary);
+            
+            const warning = document.createElement('div');
+            warning.className = 'warning-notice';
+            const warningIcon = document.createElement('i');
+            warningIcon.className = 'fas fa-exclamation-triangle';
+            const warningText = document.createElement('span');
+            warningText.textContent = 'Starting a new session will clear your current conversation.';
+            warning.appendChild(warningIcon);
+            warning.appendChild(warningText);
+            currentInfo.appendChild(warning);
+            
+            newSessionConfig.appendChild(currentInfo);
+        }
+        
+        content.appendChild(newSessionConfig);
+        
+        // Actions
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'cancel-btn';
+        cancelBtn.setAttribute('data-action', 'cancel');
+        const cancelIcon = document.createElement('i');
+        cancelIcon.className = 'fas fa-times';
+        cancelBtn.appendChild(cancelIcon);
+        cancelBtn.appendChild(document.createTextNode(' Cancel'));
+        
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'confirm-btn';
+        confirmBtn.setAttribute('data-action', 'confirm');
+        const confirmIcon = document.createElement('i');
+        confirmIcon.className = 'fas fa-plus';
+        confirmBtn.appendChild(confirmIcon);
+        confirmBtn.appendChild(document.createTextNode(' Start New Session'));
+        
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        
+        modal.appendChild(header);
+        modal.appendChild(content);
+        modal.appendChild(actions);
+        modalOverlay.appendChild(modal);
         
         document.body.appendChild(modalOverlay);
         
@@ -637,12 +840,53 @@ class Chatbot {
         return Math.max(1, estimatedTokens);
     }
 
+    validateUserInput(message) {
+        // Check length
+        if (message.length > 10000) {
+            return { isValid: false, error: 'Message too long (max 10,000 characters)' };
+        }
+
+        if (message.length === 0) {
+            return { isValid: false, error: 'Message cannot be empty' };
+        }
+
+        // Check for suspicious patterns
+        const suspiciousPatterns = [
+            /<script[^>]*>/i,
+            /javascript:/i,
+            /vbscript:/i,
+            /data:text\/html/i,
+            /<iframe[^>]*>/i,
+            /<object[^>]*>/i,
+            /<embed[^>]*>/i,
+            /<link[^>]*>/i,
+            /<meta[^>]*>/i,
+            /<style[^>]*>/i
+        ];
+
+        for (const pattern of suspiciousPatterns) {
+            if (pattern.test(message)) {
+                return { isValid: false, error: 'Message contains potentially dangerous content' };
+            }
+        }
+
+        // Check for excessive special characters (potential injection)
+        const specialCharCount = (message.match(/[<>'"&]/g) || []).length;
+        if (specialCharCount > message.length * 0.1) {
+            return { isValid: false, error: 'Message contains too many special characters' };
+        }
+
+        return { isValid: true, error: null };
+    }
+
     async sendMessage() {
         const message = this.messageInput.value.trim();
         if (!message || this.isLoading) return;
 
-        if (this.messageInput.value.length >= 5000) {
-            this.showErrorPopup('Maximum character limit (5000) reached!');
+        // Client-side input validation
+        const validationResult = this.validateUserInput(message);
+        if (!validationResult.isValid) {
+            this.showErrorPopup(validationResult.error);
             return;
         }
 
@@ -814,7 +1058,7 @@ class Chatbot {
 
         const messageContent = document.createElement('div');
         messageContent.className = 'message-content';
-        messageContent.innerHTML = this.processMessageContent(content);
+        this.safeSetHTML(messageContent, this.processMessageContent(content));
 
         messageDiv.appendChild(avatar);
         messageDiv.appendChild(messageContent);
@@ -869,7 +1113,7 @@ class Chatbot {
     displayMessageInstantly(content, messageContent) {
         // Display message content immediately with proper processing
         const processedContent = this.processMessageContent(content);
-        messageContent.innerHTML = processedContent;
+        this.safeSetHTML(messageContent, processedContent);
         
         // Apply syntax highlighting to ALL code blocks that were created
         const codeContainers = messageContent.querySelectorAll('.code-content');
@@ -929,7 +1173,7 @@ class Chatbot {
         console.log('Processing code block:', { content: content.substring(0, 50) + '...', processedContentLength: processedContent.length });
         
         // Show the complete structure immediately (header, etc.)
-        messageContent.innerHTML = processedContent;
+        this.safeSetHTML(messageContent, processedContent);
         
         console.log('Message content after setting HTML:', messageContent.innerHTML.substring(0, 200) + '...');
         
@@ -1060,13 +1304,16 @@ class Chatbot {
                 currentText += textContent[currentIndex];
                 currentIndex++;
                 // Simply update text content, don't reprocess HTML
-                messageContent.innerHTML = `<p>${this.escapeHtml(currentText)}</p>`;
+                const p = document.createElement('p');
+                p.textContent = currentText;
+                messageContent.innerHTML = '';
+                messageContent.appendChild(p);
                 this.scrollToBottom();
             } else {
                 clearInterval(this.currentTypingInterval);
                 this.currentTypingInterval = null;
                 // Show the final processed content
-                messageContent.innerHTML = processedContent;
+                this.safeSetHTML(messageContent, processedContent);
                 this.attachCopyListeners(messageContent);
                 this.scrollToBottom();
                 
@@ -2260,8 +2507,8 @@ class Chatbot {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             
-            // Check if this line starts a table row (has | characters)
-            if (line.trim().startsWith('|') && line.includes('|')) {
+            // Check if this line starts a table row (has | characters and proper table structure)
+            if (this.isTableRow(line)) {
                 if (!inTable) {
                     inTable = true;
                     tableLines = [];
@@ -2286,17 +2533,32 @@ class Chatbot {
         return result.join('\n');
     }
 
+    // Helper function to check if a line is a table row
+    isTableRow(line) {
+        // Trim the line and check if it starts and ends with |
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
+            return false;
+        }
+        
+        // Check if it has at least 3 | characters (minimum for a table row)
+        const pipeCount = (trimmed.match(/\|/g) || []).length;
+        return pipeCount >= 3;
+    }
+
     // Function to convert Markdown table lines to HTML table
     convertTableToHTML(tableLines) {
         if (tableLines.length < 2) return tableLines.join('\n');
         
-        // Remove separator line (usually the second line with ---)
+        // Parse header
         const headerLine = tableLines[0];
         const separatorLine = tableLines[1];
         const dataLines = tableLines.slice(2);
         
-        // Parse header
-        const headers = headerLine.split('|').map(cell => cell.trim()).filter(cell => cell.length > 0);
+        // Parse header cells
+        const headers = headerLine.split('|')
+            .map(cell => cell.trim())
+            .filter(cell => cell.length > 0);
         
         // Start building HTML table
         let html = '<table>\n';
@@ -2304,20 +2566,25 @@ class Chatbot {
         // Add header row
         html += '  <thead>\n    <tr>\n';
         headers.forEach(header => {
-            html += `      <th>${header}</th>\n`;
+            html += `      <th>${this.escapeHtml(header)}</th>\n`;
         });
         html += '    </tr>\n  </thead>\n';
         
         // Add body rows
         html += '  <tbody>\n';
         dataLines.forEach(line => {
-            const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell.length > 0);
-            if (cells.length > 0) {
-                html += '    <tr>\n';
-                cells.forEach(cell => {
-                    html += `      <td>${cell}</td>\n`;
-                });
-                html += '    </tr>\n';
+            // Only process lines that are actual data rows
+            if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+                const cells = line.split('|')
+                    .map(cell => cell.trim())
+                    .filter(cell => cell.length > 0);
+                if (cells.length > 0) {
+                    html += '    <tr>\n';
+                    cells.forEach(cell => {
+                        html += `      <td>${this.escapeHtml(cell)}</td>\n`;
+                    });
+                    html += '    </tr>\n';
+                }
             }
         });
         html += '  </tbody>\n';
@@ -2567,24 +2834,64 @@ class Chatbot {
             `${(max_tokens / 1000).toFixed(0)}K` : 
             max_tokens.toLocaleString();
         
-        // Create small loader with percentage on the right
-        statsElement.innerHTML = `
-            <div class="context-loader-container">
-                <div class="small-loader" data-tooltip="Tokens: ${tokenDisplay}/${maxTokenDisplay} | Model: ${this.getModelDisplayName(current_model)}">
-                    <svg class="loader-circle" viewBox="0 0 20 20">
-                        <circle class="loader-bg" cx="10" cy="10" r="8" fill="none" stroke="rgba(76, 175, 80, 0.2)" stroke-width="2"/>
-                        <circle class="loader-progress" 
-                                cx="10" cy="10" r="8" 
-                                fill="none" 
-                                stroke="${utilizationColor}" 
-                                stroke-width="2" 
-                                stroke-linecap="round"
-                                style="stroke-dasharray: ${2 * Math.PI * 8}; stroke-dashoffset: ${2 * Math.PI * 8 * (1 - utilization_percent / 100)}; transform: rotate(-90deg); transform-origin: center;${animate ? ' transition: stroke-dashoffset 0.8s ease-in-out;' : ''}"/>
-                    </svg>
-                </div>
-                <span class="loader-percentage" style="color: ${utilizationColor};${animate ? ' transition: color 0.3s ease;' : ''}">${utilization_percent}%</span>
-            </div>
-        `;
+        // Create small loader with percentage on the right safely
+        const container = document.createElement('div');
+        container.className = 'context-loader-container';
+        
+        const loader = document.createElement('div');
+        loader.className = 'small-loader';
+        loader.setAttribute('data-tooltip', `Tokens: ${tokenDisplay}/${maxTokenDisplay} | Model: ${this.getModelDisplayName(current_model)}`);
+        
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'loader-circle');
+        svg.setAttribute('viewBox', '0 0 20 20');
+        
+        const bgCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        bgCircle.setAttribute('class', 'loader-bg');
+        bgCircle.setAttribute('cx', '10');
+        bgCircle.setAttribute('cy', '10');
+        bgCircle.setAttribute('r', '8');
+        bgCircle.setAttribute('fill', 'none');
+        bgCircle.setAttribute('stroke', 'rgba(76, 175, 80, 0.2)');
+        bgCircle.setAttribute('stroke-width', '2');
+        
+        const progressCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        progressCircle.setAttribute('class', 'loader-progress');
+        progressCircle.setAttribute('cx', '10');
+        progressCircle.setAttribute('cy', '10');
+        progressCircle.setAttribute('r', '8');
+        progressCircle.setAttribute('fill', 'none');
+        progressCircle.setAttribute('stroke', utilizationColor);
+        progressCircle.setAttribute('stroke-width', '2');
+        progressCircle.setAttribute('stroke-linecap', 'round');
+        progressCircle.style.strokeDasharray = 2 * Math.PI * 8;
+        progressCircle.style.strokeDashoffset = 2 * Math.PI * 8 * (1 - utilization_percent / 100);
+        progressCircle.style.transform = 'rotate(-90deg)';
+        progressCircle.style.transformOrigin = 'center';
+        if (animate) {
+            progressCircle.style.transition = 'stroke-dashoffset 0.8s ease-in-out';
+        }
+        
+        svg.appendChild(bgCircle);
+        svg.appendChild(progressCircle);
+        loader.appendChild(svg);
+        
+        const percentage = document.createElement('span');
+        percentage.className = 'loader-percentage';
+        percentage.style.color = utilizationColor;
+        if (animate) {
+            percentage.style.transition = 'color 0.3s ease';
+        }
+        percentage.textContent = utilization_percent + '%';
+        
+        container.appendChild(loader);
+        container.appendChild(percentage);
+        
+        // Clear and append safely
+        while (statsElement.firstChild) {
+            statsElement.removeChild(statsElement.firstChild);
+        }
+        statsElement.appendChild(container);
         
         // Apply enhanced styling for the loader
         statsElement.style.cssText = `
