@@ -2231,12 +2231,15 @@ class Chatbot {
         // Process blockquotes
         text = text.replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>');
         
+        // Process tables
+        text = this.processTables(text);
+        
         // Process unordered lists
         text = text.replace(/^(\s*[-*+]\s.+)$/gm, '<li>$1</li>');
         text = text.replace(/(<li>.*<\/li>)+/gs, '<ul>$&</ul>');
         text = text.replace(/<li>\s*[-*+]\s/g, '<li>');
         
-        // Process ordered lists
+        // Process ordered lists with proper numbering
         text = text.replace(/^(\s*\d+\.\s.+)$/gm, '<li>$1</li>');
         text = text.replace(/(<li>.*<\/li>)+/gs, '<ol>$&</ol>');
         text = text.replace(/<li>\s*\d+\.\s/g, '<li>');
@@ -2245,6 +2248,82 @@ class Chatbot {
         text = text.replace(/\n/g, '<br>');
         
         return text;
+    }
+
+    // Function to process Markdown tables
+    processTables(text) {
+        const lines = text.split('\n');
+        let inTable = false;
+        let tableLines = [];
+        let result = [];
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Check if this line starts a table row (has | characters)
+            if (line.trim().startsWith('|') && line.includes('|')) {
+                if (!inTable) {
+                    inTable = true;
+                    tableLines = [];
+                }
+                tableLines.push(line);
+            } else {
+                if (inTable) {
+                    // Process the collected table lines
+                    result.push(this.convertTableToHTML(tableLines));
+                    inTable = false;
+                    tableLines = [];
+                }
+                result.push(line);
+            }
+        }
+        
+        // Handle case where table is at the end of the text
+        if (inTable) {
+            result.push(this.convertTableToHTML(tableLines));
+        }
+        
+        return result.join('\n');
+    }
+
+    // Function to convert Markdown table lines to HTML table
+    convertTableToHTML(tableLines) {
+        if (tableLines.length < 2) return tableLines.join('\n');
+        
+        // Remove separator line (usually the second line with ---)
+        const headerLine = tableLines[0];
+        const separatorLine = tableLines[1];
+        const dataLines = tableLines.slice(2);
+        
+        // Parse header
+        const headers = headerLine.split('|').map(cell => cell.trim()).filter(cell => cell.length > 0);
+        
+        // Start building HTML table
+        let html = '<table>\n';
+        
+        // Add header row
+        html += '  <thead>\n    <tr>\n';
+        headers.forEach(header => {
+            html += `      <th>${header}</th>\n`;
+        });
+        html += '    </tr>\n  </thead>\n';
+        
+        // Add body rows
+        html += '  <tbody>\n';
+        dataLines.forEach(line => {
+            const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell.length > 0);
+            if (cells.length > 0) {
+                html += '    <tr>\n';
+                cells.forEach(cell => {
+                    html += `      <td>${cell}</td>\n`;
+                });
+                html += '    </tr>\n';
+            }
+        });
+        html += '  </tbody>\n';
+        html += '</table>';
+        
+        return html;
     }
 
     // Get language icon from code-icons folder

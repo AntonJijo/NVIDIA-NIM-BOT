@@ -3316,7 +3316,7 @@ body {
 .message-content th,
 .message-content td {
     border: 1px solid rgba(76, 175, 80, 0.3);
-    padding: 8px 12px;
+    padding: 4px 8px;
     text-align: left;
 }
 
