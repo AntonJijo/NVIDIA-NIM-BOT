@@ -133,3 +133,4 @@ def enforce_formatting(text: str, fmt: str = "markdown") -> str:
             return f"response: |\n  {indented_text}"
 
     # Default: markdown (no transformation)
+    return text

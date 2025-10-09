@@ -2176,11 +2176,11 @@ class Chatbot {
                     </div>
                 `;
             } else {
-                // Process text content - handle inline code and paragraphs
+                // Process text content with Markdown formatting
                 let textContent = part.content;
                 
-                // Handle inline code
-                textContent = textContent.replace(/`([^`\n]+)`/g, '<span class="inline-code">$1</span>');
+                // Apply Markdown formatting
+                textContent = this.applyMarkdownFormatting(textContent);
                 
                 // Split into paragraphs
                 const paragraphs = textContent.split('\n\n').filter(p => p.trim());
@@ -2196,6 +2196,55 @@ class Chatbot {
         console.log('First 200 chars:', processedContent.substring(0, 200));
         
         return processedContent;
+    }
+
+    // Function to apply Markdown formatting to text
+    applyMarkdownFormatting(text) {
+        // Process inline code (must be done first to avoid conflicts)
+        text = text.replace(/`([^`\n]+)`/g, '<span class="inline-code">$1</span>');
+        
+        // Process bold text (**text** or __text__)
+        text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
+        
+        // Process italic text (*text* or _text_)
+        text = text.replace(/\*([^\*\n]+?)\*/g, '<em>$1</em>');
+        text = text.replace(/_([^_\n]+?)_/g, '<em>$1</em>');
+        
+        // Process strikethrough text (~~text~~)
+        text = text.replace(/~~(.*?)~~/g, '<del>$1</del>');
+        
+        // Process links ([text](url))
+        text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        
+        // Process headers (# Header)
+        text = text.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
+        text = text.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
+        text = text.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
+        text = text.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+        text = text.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+        text = text.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+        
+        // Process horizontal rules
+        text = text.replace(/^---$/gm, '<hr>');
+        
+        // Process blockquotes
+        text = text.replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>');
+        
+        // Process unordered lists
+        text = text.replace(/^(\s*[-*+]\s.+)$/gm, '<li>$1</li>');
+        text = text.replace(/(<li>.*<\/li>)+/gs, '<ul>$&</ul>');
+        text = text.replace(/<li>\s*[-*+]\s/g, '<li>');
+        
+        // Process ordered lists
+        text = text.replace(/^(\s*\d+\.\s.+)$/gm, '<li>$1</li>');
+        text = text.replace(/(<li>.*<\/li>)+/gs, '<ol>$&</ol>');
+        text = text.replace(/<li>\s*\d+\.\s/g, '<li>');
+        
+        // Process line breaks
+        text = text.replace(/\n/g, '<br>');
+        
+        return text;
     }
 
     // Get language icon from code-icons folder

@@ -3203,3 +3203,128 @@ body {
         transform: translateX(-50%) translateY(0);
     }
 }
+
+/* Markdown formatting styles */
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+    margin: 16px 0 8px 0;
+    color: #4caf50;
+    font-weight: 600;
+}
+
+.message-content h1 {
+    font-size: 2em;
+    border-bottom: 1px solid rgba(76, 175, 80, 0.3);
+    padding-bottom: 8px;
+}
+
+.message-content h2 {
+    font-size: 1.5em;
+    border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+    padding-bottom: 6px;
+}
+
+.message-content h3 {
+    font-size: 1.3em;
+}
+
+.message-content h4 {
+    font-size: 1.2em;
+}
+
+.message-content h5 {
+    font-size: 1.1em;
+}
+
+.message-content h6 {
+    font-size: 1em;
+}
+
+.message-content ul,
+.message-content ol {
+    margin: 12px 0;
+    padding-left: 24px;
+}
+
+.message-content li {
+    margin: 4px 0;
+    line-height: 1.5;
+}
+
+.message-content ul li {
+    list-style-type: disc;
+}
+
+.message-content ol li {
+    list-style-type: decimal;
+}
+
+.message-content blockquote {
+    margin: 12px 0;
+    padding: 8px 16px;
+    border-left: 4px solid #4caf50;
+    background: rgba(76, 175, 80, 0.1);
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+}
+
+.message-content blockquote p {
+    margin: 0;
+}
+
+.message-content hr {
+    border: none;
+    border-top: 1px solid rgba(76, 175, 80, 0.3);
+    margin: 16px 0;
+}
+
+.message-content a {
+    color: #4caf50;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(76, 175, 80, 0.5);
+}
+
+.message-content a:hover {
+    color: #66bb6a;
+    border-bottom: 1px solid #66bb6a;
+}
+
+.message-content strong {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.message-content em {
+    color: #e0e0e0;
+    font-style: italic;
+}
+
+.message-content del {
+    color: #9e9e9e;
+}
+
+.message-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+}
+
+.message-content th,
+.message-content td {
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.message-content th {
+    background: rgba(76, 175, 80, 0.15);
+    font-weight: 600;
+}
+
+.message-content tr:nth-child(even) {
+    background: rgba(76, 175, 80, 0.05);
+}
