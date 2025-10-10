@@ -45,7 +45,6 @@ ALLOWED_MODELS = {
     'openai/gpt-oss-120b',
     'qwen/qwen3-235b-a22b:free',
     'google/gemma-3-27b-it:free',
-    'x-ai/grok-4-fast:free',
 }
 
 if not NVIDIA_API_KEY:
@@ -372,3 +371,4 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     print(f"Starting NVIDIA Chatbot Server on port {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
+
