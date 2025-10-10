@@ -3247,11 +3247,11 @@ body {
 .message-content ul,
 .message-content ol {
     margin: 12px 0;
-    padding-left: 24px;
+    padding-left: 30px; /* Consistent padding for both ul and ol */
 }
 
 .message-content li {
-    margin: 4px 0;
+    margin: 6px 0; /* Increase vertical spacing between list items */
     line-height: 1.5;
 }
 
@@ -3261,21 +3261,6 @@ body {
 
 .message-content ol li {
     list-style-type: decimal;
-}
-
-/* Additional styling for better list alignment */
-.message-content ul,
-.message-content ol {
-    padding-left: 30px; /* Increase padding for better indentation */
-}
-
-/* Ensure unordered lists have the same padding as ordered lists */
-.message-content ul {
-    padding-left: 30px;
-}
-
-.message-content li {
-    margin: 6px 0; /* Increase vertical spacing between list items */
 }
 
 .message-content blockquote {
@@ -3325,7 +3310,7 @@ body {
 .message-content table {
     border-collapse: collapse;
     width: 100%;
-    margin: 8px 0;
+    margin: 4px 0;
 }
 
 .message-content th,
