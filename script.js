@@ -27,6 +27,33 @@ class Chatbot {
         while (tempDiv.firstChild) {
             element.appendChild(tempDiv.firstChild);
         }
+        
+        // Initialize DataTables for any tables in the content
+        this.initializeDataTables(element);
+    }
+    
+    initializeDataTables(container) {
+        // Wait for DOM to be ready and jQuery to be available
+        setTimeout(() => {
+            if (typeof $ !== 'undefined' && $.fn.DataTable) {
+                const tables = container.querySelectorAll('table');
+                tables.forEach(table => {
+                    // Only initialize if not already initialized
+                    if (!$(table).hasClass('dataTable')) {
+                        $(table).DataTable({
+                            paging: false,
+                            searching: false,
+                            info: false,
+                            ordering: true,
+                            responsive: true,
+                            language: {
+                                emptyTable: "No data available in table"
+                            }
+                        });
+                    }
+                });
+            }
+        }, 100);
     }
 
     constructor() {
@@ -2429,11 +2456,16 @@ class Chatbot {
                 // Apply Markdown formatting
                 textContent = this.applyMarkdownFormatting(textContent);
                 
-                // Split into paragraphs
+                // Split into paragraphs, but don't wrap tables in <p> tags
                 const paragraphs = textContent.split('\n\n').filter(p => p.trim());
                 for (const paragraph of paragraphs) {
                     if (paragraph.trim()) {
-                        processedContent += `<p>${paragraph.trim()}</p>`;
+                        // Check if this paragraph contains a table
+                        if (paragraph.includes('<table>')) {
+                            processedContent += paragraph.trim();
+                        } else {
+                            processedContent += `<p>${paragraph.trim()}</p>`;
+                        }
                     }
                 }
             }
