@@ -2566,7 +2566,9 @@ class Chatbot {
         // Add header row
         html += '  <thead>\n    <tr>\n';
         headers.forEach(header => {
-            html += `      <th>${this.escapeHtml(header)}</th>\n`;
+            // Apply markdown formatting to headers instead of escaping HTML
+            const formattedHeader = this.applyMarkdownFormatting(header);
+            html += `      <th>${formattedHeader}</th>\n`;
         });
         html += '    </tr>\n  </thead>\n';
         
